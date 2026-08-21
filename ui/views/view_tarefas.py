@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QTableWidget, QTableWidgetItem, QHeaderView, QLabel)
+                             QTableWidget, QTableWidgetItem, QHeaderView, QLabel,
+                             QCheckBox)
 from PyQt6.QtCore import Qt
 from database.conexao import SessionLocal
 from database.crud import listar_todas_tarefas, atualizar_status_tarefa
@@ -9,68 +10,37 @@ class TelaTarefas(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setStyleSheet("""
-            QWidget { background-color: #12141c; color: #ffffff; font-family: 'Segoe UI'; }
-            QTableWidget {
-                background-color: #1e212b; border: none; border-radius: 10px;
-                gridline-color: #2c2f3f; font-size: 14px;
-            }
-            QTableWidget::item { padding: 10px; border-bottom: 1px solid #2c2f3f; }
-            QHeaderView::section {
-                background-color: #2c2f3f; padding: 5px; font-weight: bold; border: none;
-                color: #8a8d98;
-            }
-            QPushButton {
-                background-color: #2962ff; color: white; font-weight: bold;
-                border-radius: 6px; padding: 8px 15px; font-size: 13px;
-            }
-            QPushButton:hover { background-color: #1e4bd8; }
-        """)
-
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(30, 30, 30, 30)
 
-        # --- CABEÇALHO ---
-        layout_topo = QHBoxLayout()
-        titulo = QLabel("Tarefas da Equipe")
-        titulo.setStyleSheet("font-size: 22px; font-weight: bold;")
+        titulo = QLabel("Tarefas")
+        titulo.setStyleSheet("font-size: 24px; font-weight: bold; margin-bottom: 15px;")
+        layout.addWidget(titulo)
 
-        btn_atualizar = QPushButton("🔄 Atualizar")
-        btn_atualizar.setStyleSheet("background-color: #2c2f3f;")
-        btn_atualizar.clicked.connect(self.carregar_dados)
-
-        layout_topo.addWidget(titulo)
-        layout_topo.addStretch()
-        layout_topo.addWidget(btn_atualizar)
-
-        layout.addLayout(layout_topo)
-        layout.addSpacing(10)
-
-        # --- TABELA DE TAREFAS ---
+        # TABELA COM NOVO ESTILO MODERNO
         self.tabela = QTableWidget()
         self.tabela.setColumnCount(4)
-        self.tabela.setHorizontalHeaderLabels(["Concluído", "Descrição da Tarefa", "Status", "Responsável"])
+        self.tabela.setHorizontalHeaderLabels(["", "Descrição da Tarefa", "Status", "Responsável"])
 
-        # Ajusta a largura das colunas
+        self.tabela.setAlternatingRowColors(True)
+        self.tabela.verticalHeader().setDefaultSectionSize(65)
+        self.tabela.verticalHeader().setVisible(False)
+        self.tabela.setShowGrid(False)
+        self.tabela.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.tabela.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
         header = self.tabela.horizontalHeader()
-        header.setSectionResizeMode(0,
-                                    QHeaderView.ResizeMode.ResizeToContents)  # Coluna do Checkbox ajusta ao tamanho dele
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Descrição estica para preencher a tela
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Checkbox
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Descrição
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Status
 
         layout.addWidget(self.tabela)
 
-        # Quando o usuário clicar no checkbox, o PyQt avisa a nossa função
-        self.tabela.itemChanged.connect(self.ao_alterar_checkbox)
-
-        # Variável de segurança para o sistema não salvar no banco enquanto ainda está desenhando a tela
-        self.carregando_tela = False
-
+        self.carregando = False
         self.carregar_dados()
 
     def carregar_dados(self):
-        self.carregando_tela = True  # Pausa o salvamento no banco
-        self.tabela.setRowCount(0)  # Limpa a tabela
-
+        self.carregando = True
         db = SessionLocal()
         tarefas = listar_todas_tarefas(db)
         db.close()
@@ -78,58 +48,56 @@ class TelaTarefas(QWidget):
         self.tabela.setRowCount(len(tarefas))
 
         for linha, t in enumerate(tarefas):
-            # 1. Coluna do Checkbox (Escondendo o ID da tarefa dentro dele para o banco saber quem é)
-            item_check = QTableWidgetItem("")
-            item_check.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            # 1. CHECKBOX CENTRALIZADO
+            container_check = QWidget()
+            layout_check = QHBoxLayout(container_check)
+            layout_check.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout_check.setContentsMargins(15, 0, 0, 0)
 
-            if t.status == "Concluída":
-                item_check.setCheckState(Qt.CheckState.Checked)
-            else:
-                item_check.setCheckState(Qt.CheckState.Unchecked)
+            checkbox = QCheckBox()
+            checkbox.setChecked(t.status == "Concluída")
+            checkbox.stateChanged.connect(lambda state, tid=t.id: self.ao_alterar_checkbox(tid, state))
+            layout_check.addWidget(checkbox)
+            self.tabela.setCellWidget(linha, 0, container_check)
 
-            item_check.setData(Qt.ItemDataRole.UserRole, t.id)  # ⬅️ Guardamos o ID secretamente aqui!
-
-            # 2. Descrição
+            # 2. DESCRIÇÃO
             item_desc = QTableWidgetItem(t.descricao)
-
-            # 3. Status (Visual com cores)
-            item_status = QTableWidgetItem(t.status)
+            font = item_desc.font()
+            font.setBold(True)
+            item_desc.setFont(font)
             if t.status == "Concluída":
-                item_status.setForeground(Qt.GlobalColor.gray)
-                item_desc.setForeground(Qt.GlobalColor.gray)  # Deixa o texto cinza se já acabou
-            else:
-                item_status.setForeground(Qt.GlobalColor.yellow)
+                item_desc.setForeground(Qt.GlobalColor.gray)
+            self.tabela.setItem(linha, 1, item_desc)
 
-            # 4. Responsável
+            # 3. STATUS (BADGE)
+            lbl_status = QLabel(t.status)
+            lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            # Mesma regra de CSS das pílulas!
+            base_style = "border-radius: 12px; padding: 4px 12px; font-weight: bold; font-size: 11px;"
+            if t.status == "Concluída":
+                lbl_status.setStyleSheet(base_style + "background-color: rgba(39, 174, 96, 0.15); color: #2ecc71;")
+            else:
+                lbl_status.setStyleSheet(base_style + "background-color: rgba(241, 196, 15, 0.15); color: #f1c40f;")
+
+            container_status = QWidget()
+            layout_status = QHBoxLayout(container_status)
+            layout_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout_status.addWidget(lbl_status)
+            self.tabela.setCellWidget(linha, 2, container_status)
+
+            # 4. RESPONSÁVEL
             resp = t.responsavel if t.responsavel else "Não atribuído"
             item_resp = QTableWidgetItem(resp)
-            item_resp.setForeground(Qt.GlobalColor.cyan)
-
-            # Adiciona na tabela
-            self.tabela.setItem(linha, 0, item_check)
-            self.tabela.setItem(linha, 1, item_desc)
-            self.tabela.setItem(linha, 2, item_status)
+            item_resp.setForeground(Qt.GlobalColor.gray)
             self.tabela.setItem(linha, 3, item_resp)
 
-        self.carregando_tela = False  # Libera o salvamento no banco
+        self.carregando = False
 
-    def ao_alterar_checkbox(self, item):
-        # Ignora se estivermos no meio do carregamento da tela
-        if self.carregando_tela:
-            return
-
-        # O checkbox está sempre na coluna 0. Se clicar em outra, ignoramos.
-        if item.column() == 0:
-            # Resgata o ID secreto que guardamos
-            tarefa_id = item.data(Qt.ItemDataRole.UserRole)
-
-            # Descobre se está marcado ou desmarcado
-            esta_concluido = (item.checkState() == Qt.CheckState.Checked)
-
-            # Salva no Banco de Dados
-            db = SessionLocal()
-            atualizar_status_tarefa(db, tarefa_id, esta_concluido)
-            db.close()
-
-            # Recarrega a tela para atualizar as cores
-            self.carregar_dados()
+    def ao_alterar_checkbox(self, tarefa_id, state):
+        if self.carregando: return
+        esta_concluido = (state == 2)  # 2 é o valor de Checked no PyQt
+        db = SessionLocal()
+        atualizar_status_tarefa(db, tarefa_id, esta_concluido)
+        db.close()
+        self.carregar_dados()  # Recarrega para pintar o texto de cinza e mudar a badge

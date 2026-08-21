@@ -14,25 +14,6 @@ class DialogDetalhesProcesso(QDialog):
         self.setWindowTitle(f"Ficha do Processo #{processo_id}")
         self.resize(650, 600)
 
-        self.setStyleSheet("""
-            QDialog { background-color: #1e212b; color: white; font-family: 'Segoe UI'; }
-            QLabel.titulo { font-size: 22px; font-weight: bold; color: #ffffff; }
-            QLabel.subtitulo { font-size: 14px; color: #8a8d98; margin-bottom: 5px; }
-
-            QFrame.card-verde { background-color: #1a2721; border: 1px solid #27ae60; border-radius: 8px; }
-            QFrame.card-vermelho { background-color: #2b1a1a; border: 1px dashed #e74c3c; border-radius: 8px; }
-
-            QComboBox { background-color: #12141c; border: 1px solid #2c2f3f; border-radius: 5px; padding: 8px; color: white; font-size: 14px; }
-
-            QPushButton { background-color: #2962ff; color: white; font-weight: bold; border-radius: 6px; padding: 10px; font-size: 14px; }
-            QPushButton:hover { background-color: #1e4bd8; }
-            
-            QPushButton#btn-scanner { background-color: #d35400; color: white; font-weight: bold; }
-            QPushButton#btn-scanner:hover { background-color: #e67e22; }
-
-            QPushButton#btn-anexar { background-color: #2c2f3f; color: white; margin-bottom: 10px; }
-            QPushButton#btn-anexar:hover { background-color: #3f4359; }
-        """)
 
         # Puxa os dados do banco
         self.carregar_dados_do_banco()

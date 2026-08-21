@@ -10,19 +10,6 @@ class DialogNovoProcesso(QDialog):
         self.setWindowTitle("Cadastrar Novo Processo")
         self.resize(400, 300)
 
-        self.setStyleSheet("""
-            QDialog { background-color: #1e212b; color: white; }
-            QLabel { font-size: 14px; font-weight: bold; color: #8a8d98; }
-            QLineEdit, QComboBox {
-                background-color: #12141c; border: 1px solid #2c2f3f;
-                border-radius: 5px; padding: 8px; color: white; font-size: 14px;
-            }
-            QPushButton {
-                background-color: #27ae60; color: white; font-weight: bold;
-                border-radius: 6px; padding: 10px; font-size: 14px; margin-top: 15px;
-            }
-            QPushButton:hover { background-color: #2ecc71; }
-        """)
 
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()

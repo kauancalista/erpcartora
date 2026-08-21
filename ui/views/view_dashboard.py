@@ -9,25 +9,6 @@ class TelaDashboard(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.setStyleSheet("""
-            QWidget { background-color: #12141c; color: #ffffff; font-family: 'Segoe UI'; }
-
-            /* ESTILO BASE DOS CARDS */
-            QFrame[class~="card"] { 
-                background-color: #1a233a; 
-                border-radius: 12px; 
-                border: 1px solid #2c2f3f; 
-            }
-
-            /* EFEITO GLOW (GAMER) AO PASSAR O MOUSE */
-            QFrame[class~="card"]:hover {
-                background-color: #1f2942;
-                border: 2px solid #00f3ff;
-            }
-
-            QLabel.numero { font-size: 36px; font-weight: bold; color: white; }
-            QLabel.titulo-card { font-size: 14px; color: #8a8d98; font-weight: bold; }
-        """)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)

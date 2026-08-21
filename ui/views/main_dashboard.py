@@ -15,35 +15,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Sistema Cartório - ERP Desktop")
         self.resize(1150, 720)
 
-        # --- ESTILO GLOBAL DA JANELA ---
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #0d0f14; 
-            }
-            #sidebar {
-                background-color: #12141c;
-                border-right: 1px solid #1e212b;
-            }
-            QPushButton.menu-btn {
-                background-color: transparent;
-                color: #8a8d98;
-                text-align: left;
-                padding: 12px 20px;
-                font-size: 15px;
-                font-weight: bold;
-                border: none;
-                border-radius: 8px;
-            }
-            QPushButton.menu-btn:hover {
-                background-color: #1e212b;
-                color: #ffffff;
-            }
-            QPushButton.menu-btn:checked {
-                background-color: #2962ff;
-                color: #ffffff;
-            }
-        """)
-
         widget_central = QWidget()
         self.setCentralWidget(widget_central)
 

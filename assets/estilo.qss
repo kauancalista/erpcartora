@@ -1,0 +1,168 @@
+/* =========================================
+   ESTILO GLOBAL - CARTÓRIO ERP (PRODUÇÃO)
+   Baseado no UI Design (Dark Mode Deep Blue)
+   ========================================= */
+
+/* --- FUNDO GERAL (O azul mais escuro) --- */
+QMainWindow, QDialog, QStackedWidget {
+    background-color: #0B0E14;
+    color: #FFFFFF;
+    font-family: 'Segoe UI', 'Inter', sans-serif;
+}
+
+QWidget {
+    color: #FFFFFF;
+    font-family: 'Segoe UI', 'Inter', sans-serif;
+}
+
+/* --- BARRA LATERAL (SIDEBAR) --- */
+QFrame#sidebar {
+    background-color: #11151F;
+    border-right: 1px solid #1E2532;
+}
+
+QPushButton.menu-btn {
+    background-color: transparent;
+    color: #8A92A6;
+    text-align: left;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    margin-bottom: 5px;
+}
+
+QPushButton.menu-btn:hover {
+    background-color: #181E2C;
+    color: #FFFFFF;
+}
+
+QPushButton.menu-btn:checked {
+    background-color: #2962FF; /* Azul elétrico da sua imagem */
+    color: #FFFFFF;
+}
+
+/* --- PAINEIS E CARDS --- */
+QFrame.painel, QFrame#painel-form {
+    background-color: #11151F;
+    border-radius: 12px;
+    border: 1px solid #1E2532;
+}
+
+QFrame[class~="card"] {
+    background-color: #151A27;
+    border-radius: 12px;
+    border: 1px solid #1E2532;
+}
+
+QFrame[class~="card"]:hover {
+    background-color: #1A2133;
+    border: 1px solid #2962FF;
+}
+
+/* --- TEXTOS E LABELS --- */
+QLabel {
+    background-color: transparent;
+    color: #FFFFFF;
+}
+
+QLabel.titulo-secao { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
+QLabel.label-campo { font-size: 13px; color: #8A92A6; font-weight: 600; }
+QLabel.numero { font-size: 32px; font-weight: bold; color: white; }
+QLabel.titulo-card { font-size: 13px; color: #8A92A6; font-weight: 600; }
+
+/* --- CAMPOS DE TEXTO (Inputs modernos) --- */
+QComboBox, QLineEdit {
+    background-color: #0B0E14; /* Fundo mais escuro afundado */
+    border: 1px solid #1E2532;
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: #FFFFFF;
+    font-size: 13px;
+}
+
+QComboBox:focus, QLineEdit:focus, QComboBox:hover, QLineEdit:hover {
+    border: 1px solid #2962FF;
+    background-color: #11151F;
+}
+
+QComboBox::drop-down { border: none; }
+QComboBox:disabled { background-color: #0B0E14; color: #4A5568; border: 1px solid #141824; }
+
+/* --- TABELAS (ESTILO CARD LIST MODERNO) --- */
+QTableWidget {
+    background-color: #0B0E14; /* Cor da primeira faixa */
+    alternate-background-color: #11151F; /* Cor da segunda faixa intercalada */
+    border: 1px solid #1E2532; /* A borda da "janela" por fora */
+    border-radius: 12px;
+    padding: 5px;
+    outline: none;
+    font-size: 14px;
+    color: #E2E8F0;
+}
+
+/* Deixa as faixas lisas, sem linhas separando as células e com bom espaçamento */
+QTableWidget::item {
+    border: none;
+    padding: 12px 10px;
+}
+
+/* Cor ao selecionar a linha */
+QTableWidget::item:selected {
+    background-color: #1A2133;
+    color: #FFFFFF;
+}
+
+/* Cabeçalho limpo, parecendo só um título */
+QHeaderView::section {
+    background-color: transparent;
+    color: #8A92A6;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 15px 10px;
+    border: none;
+    border-bottom: 2px solid #1E2532;
+    text-align: left;
+}
+
+/* --- O COMPONENTE DE STATUS (Simulando uma Badge Pílula) --- */
+QComboBox.combo-tabela {
+    background-color: #181E2C;
+    border: 1px solid #2c364c;
+    border-radius: 12px; /* Forma de pílula */
+    color: #A0AEC0;
+    padding: 4px 12px;
+    font-weight: bold;
+    font-size: 11px;
+}
+QComboBox.combo-tabela:hover {
+    background-color: #232C40;
+    border: 1px solid #3B4B68;
+}
+
+/* --- BOTÕES --- */
+QPushButton {
+    background-color: #2962FF;
+    color: white;
+    font-weight: 600;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 13px;
+}
+
+QPushButton:hover { background-color: #1E4BD8; }
+
+QPushButton#btn-novo { padding: 10px 20px; }
+QPushButton#btn-gerar { background-color: #2962FF; font-size: 14px; padding: 12px; }
+
+/* Botões invisíveis de ícone da tabela */
+QPushButton.btn-icone {
+    background-color: transparent;
+    border: none;
+    font-size: 18px;
+    border-radius: 4px;
+}
+QPushButton.btn-icone:hover {
+    background-color: #1E2532;
+}
