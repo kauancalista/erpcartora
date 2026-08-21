@@ -1,0 +1,13 @@
+
+# Python
+__pycache__/
+*.pyc
+
+
+/config
+/.idea
+
+banco_cartorio.db
+teste_banco.py
+/assets/icones/
+/assets/templates
