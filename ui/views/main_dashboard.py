@@ -37,25 +37,34 @@ class MainWindow(QMainWindow):
             "color: white; font-size: 22px; font-weight: bold; padding-left: 10px; margin-bottom: 25px;")
         layout_sidebar.addWidget(lbl_logo)
 
-        # Criando os 4 botões do menu
-        self.btn_dashboard = self.criar_botao_menu("📊 Dashboard")
-        self.btn_processos = self.criar_botao_menu("📂 Protocolos")
-        self.btn_tarefas = self.criar_botao_menu("📋 Tarefas")
+        # Criando os  botões do menu
+        self.btn_dashboard = self.criar_botao_menu("🏠 Dashboard")
+        self.btn_processos = self.criar_botao_menu("📄 Documentos")
         self.btn_requerimentos = self.criar_botao_menu("📝 Requerimentos")
+        self.btn_relatorios = self.criar_botao_menu("📊 Relatórios")
+        self.btn_tarefas = self.criar_botao_menu("✅ Tarefas")
+        self.btn_agenda = self.criar_botao_menu("📅 Agenda")
+        self.btn_config = self.criar_botao_menu("⚙️ Configurações")
 
-        # Ligando os cliques (Índices: 0, 1, 2, 3)
+        # Ligando os cliques
         self.btn_dashboard.clicked.connect(lambda: self.mudar_tela(0))
         self.btn_processos.clicked.connect(lambda: self.mudar_tela(1))
         self.btn_tarefas.clicked.connect(lambda: self.mudar_tela(2))
         self.btn_requerimentos.clicked.connect(lambda: self.mudar_tela(3))
+        # (As novas telas podem apontar para widgets em branco por enquanto)
+        self.btn_relatorios.clicked.connect(lambda: self.mudar_tela(4))
+        self.btn_agenda.clicked.connect(lambda: self.mudar_tela(5))
+        self.btn_config.clicked.connect(lambda: self.mudar_tela(6))
 
         # Adicionando no menu lateral
         layout_sidebar.addWidget(self.btn_dashboard)
         layout_sidebar.addWidget(self.btn_processos)
-        layout_sidebar.addWidget(self.btn_tarefas)
         layout_sidebar.addWidget(self.btn_requerimentos)
+        layout_sidebar.addWidget(self.btn_relatorios)
+        layout_sidebar.addWidget(self.btn_tarefas)
+        layout_sidebar.addWidget(self.btn_agenda)
+        layout_sidebar.addWidget(self.btn_config)
         layout_sidebar.addStretch()
-
         # ==========================================
         # 2. ÁREA CENTRAL (O Empilhador de Telas)
         # ==========================================
@@ -72,6 +81,9 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(tela_proc)  # 1
         self.stack.addWidget(tela_tar)  # 2
         self.stack.addWidget(tela_req)  # 3
+        self.stack.addWidget(QWidget())  # 4 - Relatórios (Placeholder)
+        self.stack.addWidget(QWidget())  # 5 - Agenda (Placeholder)
+        self.stack.addWidget(QWidget())  # 6 - Config (Placeholder)
 
         layout_principal.addWidget(sidebar)
         layout_principal.addWidget(self.stack)
