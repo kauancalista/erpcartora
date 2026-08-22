@@ -7,6 +7,8 @@ from ui.views.view_dashboard import TelaDashboard
 from ui.views.view_processos import TelaProcessos
 from ui.views.view_tarefas import TelaTarefas
 from ui.views.view_requerimentos import TelaRequerimentos
+from ui.views.view_casamentos import TelaCasamentos
+
 
 
 class MainWindow(QMainWindow):
@@ -45,6 +47,7 @@ class MainWindow(QMainWindow):
         self.btn_tarefas = self.criar_botao_menu("✅ Tarefas")
         self.btn_agenda = self.criar_botao_menu("📅 Agenda")
         self.btn_config = self.criar_botao_menu("⚙️ Configurações")
+        self.btn_casamentos = self.criar_botao_menu("💍 Casamentos")
 
         # Ligando os cliques
         self.btn_dashboard.clicked.connect(lambda: self.mudar_tela(0))
@@ -55,6 +58,7 @@ class MainWindow(QMainWindow):
         self.btn_relatorios.clicked.connect(lambda: self.mudar_tela(4))
         self.btn_agenda.clicked.connect(lambda: self.mudar_tela(5))
         self.btn_config.clicked.connect(lambda: self.mudar_tela(6))
+        self.btn_casamentos.clicked.connect(lambda: self.mudar_tela(7))
 
         # Adicionando no menu lateral
         layout_sidebar.addWidget(self.btn_dashboard)
@@ -64,6 +68,7 @@ class MainWindow(QMainWindow):
         layout_sidebar.addWidget(self.btn_tarefas)
         layout_sidebar.addWidget(self.btn_agenda)
         layout_sidebar.addWidget(self.btn_config)
+        layout_sidebar.addWidget(self.btn_casamentos)
         layout_sidebar.addStretch()
         # ==========================================
         # 2. ÁREA CENTRAL (O Empilhador de Telas)
@@ -75,6 +80,7 @@ class MainWindow(QMainWindow):
         tela_proc = TelaProcessos()
         tela_tar = TelaTarefas()
         tela_req = TelaRequerimentos()
+        tela_cas = TelaCasamentos()
 
         # Adicionando na pilha exata (0 a 3)
         self.stack.addWidget(tela_dash)  # 0
@@ -84,6 +90,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(QWidget())  # 4 - Relatórios (Placeholder)
         self.stack.addWidget(QWidget())  # 5 - Agenda (Placeholder)
         self.stack.addWidget(QWidget())  # 6 - Config (Placeholder)
+        self.stack.addWidget(tela_cas)  # 7 - Config (Placeholder)
 
         layout_principal.addWidget(sidebar)
         layout_principal.addWidget(self.stack)
