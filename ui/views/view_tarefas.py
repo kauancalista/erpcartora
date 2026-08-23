@@ -201,13 +201,14 @@ class TelaTarefas(QWidget):
     # CÉREBRO: PUXANDO DAS 3 TABELAS
     # ==========================================
     def carregar_dados_hub(self):
+        import json  # Garante a leitura do dicionário do banco
         db = SessionLocal()
 
         # 1. Puxa Processos (Que não estão concluídos)
         processos = db.query(Processo).filter(Processo.status.notin_(["Concluído", "Arquivado"])).all()
 
-        # 2. Puxa Casamentos (Que possuem pendências de documentos)
-        casamentos = db.query(Casamento).filter(Casamento.pendencias > 0, Casamento.status != "Arquivado").all()
+        # 2. Puxa todos os Casamentos Ativos para analisar o Checklist
+        casamentos = db.query(Casamento).filter(Casamento.status != "Arquivado").all()
 
         # 3. Puxa Tarefas Manuais
         tarefas_manuais = db.query(Tarefa).filter(Tarefa.status != "Concluída").all()
@@ -228,16 +229,35 @@ class TelaTarefas(QWidget):
             })
             count_proc += 1
 
-        # Formata Casamentos (Pendência de Certidões como você pediu!)
+        # LÓGICA REFINADA: Casamentos (Só aciona se faltar a Certidão específica)
         for c in casamentos:
-            data_str = c.data_celebracao.strip() if c.data_celebracao else "A definir"
-            self.lista_todas_tarefas.append({
-                "origem": "Casamento", "cor": "#8E44AD", "icone": "💍",
-                "titulo": f"Pendência 2ª via Certidão - {c.nome_noivo} e {c.nome_noiva}",
-                "data_texto": f"Celebração: {data_str}", "info_extra": f"Protocolo: {c.protocolo}",
-                "status": f"{c.pendencias} doc(s) pendente(s)"
-            })
-            count_cas += 1
+            try:
+                # Transforma a string do banco de volta num Dicionário Python
+                docs_dict = json.loads(c.docs_entregues) if c.docs_entregues else {}
+            except:
+                docs_dict = {}
+
+            # Pega o status exato das duas certidões (Se não achar, considera False/Faltando)
+            cert_noivo = docs_dict.get("Certidão Noivo (Até 90 dias)", False)
+            cert_noiva = docs_dict.get("Certidão Noiva (Até 90 dias)", False)
+
+            # Se AO MENOS UMA estiver faltando (False), cria a Tarefa
+            if not cert_noivo or not cert_noiva:
+                faltando_cert = []
+                if not cert_noivo: faltando_cert.append("Noivo")
+                if not cert_noiva: faltando_cert.append("Noiva")
+
+                # Se faltar dos dois, vira "Noivo e Noiva"
+                txt_faltando = " e ".join(faltando_cert)
+
+                data_str = c.data_celebracao.strip() if c.data_celebracao else "A definir"
+                self.lista_todas_tarefas.append({
+                    "origem": "Casamento", "cor": "#8E44AD", "icone": "💍",
+                    "titulo": f"Pendência 2ª via Certidão ({txt_faltando}) - {c.nome_noivo} e {c.nome_noiva}",
+                    "data_texto": f"Celebração: {data_str}", "info_extra": f"Protocolo: {c.protocolo}",
+                    "status": "Aguardando Certidão"
+                })
+                count_cas += 1
 
         # Formata Tarefas Manuais
         for t in tarefas_manuais:
@@ -255,7 +275,6 @@ class TelaTarefas(QWidget):
         self.lbl_kpi_manuais.setText(str(count_man))
 
         self.renderizar_cards()
-
     # ==========================================
     # RENDERIZAÇÃO DOS CARDS
     # ==========================================

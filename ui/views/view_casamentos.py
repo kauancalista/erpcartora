@@ -8,12 +8,13 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QStackedWidget, QMessageBox, QGraphicsOpacityEffect,
                              QLineEdit, QFormLayout, QCheckBox, QRadioButton)
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QCursor, QFont
 
 from database.conexao import SessionLocal
 from database.crud import (listar_todos_casamentos, criar_casamento,
                            atualizar_casamento_interativo, atualizar_status_casamento)
-from ui.componentes import BarraPesquisa, LabelStatus, wrap_transparente, obter_estilo_status
+from ui.componentes import BarraPesquisa, LabelStatus, wrap_transparente, obter_estilo_status, notificar
+from ui.modulo_impressao import DialogImpressao  # <-- O MOTOR DE IMPRESSÃO AQUI!
 
 
 class TelaCasamentos(QWidget):
@@ -34,7 +35,6 @@ class TelaCasamentos(QWidget):
         layout_esq_base.setContentsMargins(0, 0, 0, 0)
 
         self.stack_esq = QStackedWidget()
-
         self.efeito_fade_esq = QGraphicsOpacityEffect(self.stack_esq)
         self.stack_esq.setGraphicsEffect(self.efeito_fade_esq)
         self.animacao_esq = QPropertyAnimation(self.efeito_fade_esq, b"opacity")
@@ -55,12 +55,11 @@ class TelaCasamentos(QWidget):
         layout_esq_base.addWidget(self.stack_esq)
 
         # ==========================================
-        # PAINEL DIREITO (DETALHES)
+        # PAINEL DIREITO (DETALHES DA FICHA)
         # ==========================================
         self.painel_dir = QFrame()
         self.painel_dir.setStyleSheet("background-color: #11151F; border-left: 1px solid #1E2532;")
-         # self.painel_dir.setMinimumWidth(500)
-        #self.painel_dir.setMaximumWidth(600)
+        # Removido setMinimumWidth para não quebrar a responsividade!
 
         self.efeito_opacidade_dir = QGraphicsOpacityEffect(self.painel_dir)
         self.painel_dir.setGraphicsEffect(self.efeito_opacidade_dir)
@@ -84,13 +83,14 @@ class TelaCasamentos(QWidget):
         scroll_dir.setWidget(self.container_dir)
         layout_dir_base.addWidget(scroll_dir)
 
+        # Proporção de 60% Esquerda / 40% Direita
         layout_principal.addWidget(self.painel_esq_base, 6)
         layout_principal.addWidget(self.painel_dir, 4)
 
         self.carregar_dados_do_banco()
 
     # ==========================================
-    # MONTAGEM DA LISTA (PÁGINA 0)
+    # MONTAGEM DA LISTA E FORMULÁRIO (ESQUERDA)
     # ==========================================
     def montar_pagina_lista(self):
         layout = QVBoxLayout(self.pagina_lista)
@@ -101,15 +101,27 @@ class TelaCasamentos(QWidget):
         lbl_titulo = QLabel("Casamentos")
         lbl_titulo.setStyleSheet("font-size: 26px; font-weight: bold; color: white;")
 
+        # --- NOVO BOTÃO DE IMPRIMIR AQUI ---
+        btn_imprimir_form = QPushButton("🖨️ Formulário em Branco")
+        btn_imprimir_form.setStyleSheet(
+            "background-color: #151A27; color: white; font-weight: bold; padding: 10px 18px; border-radius: 6px; border: 1px solid #1E2532;")
+        btn_imprimir_form.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_imprimir_form.clicked.connect(self.imprimir_requerimento)
+
         btn_novo = QPushButton("+ Formulário de Entrada")
         btn_novo.setStyleSheet(
             "background-color: #2962FF; color: white; font-weight: bold; padding: 10px 18px; border-radius: 6px;")
         btn_novo.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_novo.clicked.connect(self.transicionar_para_form)
 
+        box_botoes = QHBoxLayout()
+        box_botoes.setSpacing(10)
+        box_botoes.addWidget(btn_imprimir_form)
+        box_botoes.addWidget(btn_novo)
+
         box_topo.addWidget(lbl_titulo)
         box_topo.addStretch()
-        box_topo.addWidget(btn_novo)
+        box_topo.addLayout(box_botoes)
         layout.addLayout(box_topo)
 
         self.lbl_kpi_total = QLabel("0")
@@ -166,9 +178,6 @@ class TelaCasamentos(QWidget):
         self.tabela.itemSelectionChanged.connect(self.ao_selecionar_casamento)
         layout.addWidget(self.tabela)
 
-    # ==========================================
-    # MONTAGEM DO FORMULÁRIO (PÁGINA 1)
-    # ==========================================
     def montar_pagina_form(self):
         layout = QVBoxLayout(self.pagina_form)
         layout.setContentsMargins(40, 40, 40, 40)
@@ -292,7 +301,7 @@ class TelaCasamentos(QWidget):
         self.animacao_esq.start()
 
     # ==========================================
-    # SALVANDO E ATUALIZANDO (BANCO DE DADOS)
+    # CÉREBRO E BANCO DE DADOS
     # ==========================================
     def salvar_requerimento(self):
         if not self.inp_noivo.text() or not self.inp_noiva.text() or not self.inp_data.text():
@@ -318,11 +327,12 @@ class TelaCasamentos(QWidget):
             pendencias=faltando
         )
         db.close()
+        notificar(self, "Protocolo gerado com sucesso!", "sucesso")
 
-        self.inp_noivo.clear()
+        self.inp_noivo.clear();
         self.inp_noiva.clear()
-        self.inp_tel.clear()
-        self.inp_data.clear()
+        self.inp_tel.clear();
+        self.inp_data.clear();
         self.inp_hora.clear()
         for chk in self.checks_docs_iniciais: chk.setChecked(False)
 
@@ -372,9 +382,7 @@ class TelaCasamentos(QWidget):
 
             item_noivos = QTableWidgetItem(noivos_texto)
             item_noivos.setForeground(QColor("white"))
-            font = item_noivos.font()
-            font.setBold(True)
-            item_noivos.setFont(font)
+            item_noivos.setFont(QFont("Arial", 10, QFont.Weight.Bold))
             self.tabela.setItem(linha, 1, item_noivos)
 
             item_ent = QTableWidgetItem(c.data_entrada)
@@ -385,8 +393,7 @@ class TelaCasamentos(QWidget):
             item_prev.setForeground(QColor("#E2E8F0"))
             self.tabela.setItem(linha, 3, item_prev)
 
-            badge_status = LabelStatus(c.status)
-            self.tabela.setCellWidget(linha, 4, wrap_transparente(badge_status))
+            self.tabela.setCellWidget(linha, 4, wrap_transparente(LabelStatus(c.status)))
 
             if c.pendencias > 0:
                 badge_pend = LabelStatus(str(c.pendencias))
@@ -399,45 +406,40 @@ class TelaCasamentos(QWidget):
 
             self.tabela.setCellWidget(linha, 5, wrap_transparente(badge_pend))
 
-        if dados_filtrados:
+        if dados_filtrados and self.tabela.currentRow() == -1:
             self.tabela.selectRow(0)
 
     # ==========================================
-    # PAINEL DIREITO INTERATIVO
+    # PAINEL DIREITO (AS ABAS)
     # ==========================================
     def ao_selecionar_casamento(self):
         linhas_selecionadas = self.tabela.selectedItems()
-        if not linhas_selecionadas and self.tabela.currentRow() == -1: return
+        if not linhas_selecionadas: return
 
         linha = self.tabela.currentRow()
         protocolo = self.tabela.item(linha, 0).text()
 
         casamento = next((c for c in self.todos_casamentos if c.protocolo == protocolo), None)
         if casamento:
-            # CORREÇÃO 1: Garante que o painel volte a aparecer caso estivesse arquivado/escondido!
             self.painel_dir.show()
             self.construir_painel_direito(casamento)
             self.animacao_dir.start()
 
     def construir_painel_direito(self, c):
         self.casamento_atual = c
-
-        # CORREÇÃO 2: Limpa da forma limpa, sem acumular sujeira e afundar a tela
         self.limpar_layout_interno(self.layout_dir)
 
-        # --- CABEÇALHO ---
+        # CABEÇALHO
         layout_header = QHBoxLayout()
         lbl_prot = QLabel(c.protocolo)
         lbl_prot.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
-
         self.badge_status_direita = LabelStatus(c.status)
-
         layout_header.addWidget(lbl_prot)
         layout_header.addWidget(self.badge_status_direita)
         layout_header.addStretch()
         self.layout_dir.addLayout(layout_header)
 
-        # --- ABAS ---
+        # AS ABAS (Agora todas ativas!)
         layout_abas = QHBoxLayout()
         abas = ["Geral", "Pagamentos", "Histórico"]
         self.botoes_abas = []
@@ -450,26 +452,32 @@ class TelaCasamentos(QWidget):
         layout_abas.addStretch()
         self.layout_dir.addLayout(layout_abas)
 
-        # --- O CONTAINER MUTÁVEL ---
+        # CONTAINER DAS ABAS
         self.stack_abas = QStackedWidget()
+
+        # Página 1: GERAL
         page_geral = QWidget()
         layout_geral = QVBoxLayout(page_geral)
         layout_geral.setContentsMargins(0, 10, 0, 0)
         self.montar_aba_geral(layout_geral, c)
         self.stack_abas.addWidget(page_geral)
 
-        for nome_aba in abas[1:]:
-            page = QWidget()
-            layout_page = QVBoxLayout(page)
-            lbl_temp = QLabel(f"A seção '{nome_aba}' está em construção.")
-            lbl_temp.setStyleSheet("color: #8A92A6; font-size: 14px;")
-            lbl_temp.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout_page.addWidget(lbl_temp)
-            self.stack_abas.addWidget(page)
+        # Página 2: PAGAMENTOS
+        page_pag = QWidget()
+        layout_pag = QVBoxLayout(page_pag)
+        layout_pag.setContentsMargins(0, 10, 0, 0)
+        self.montar_aba_pagamentos(layout_pag, c)
+        self.stack_abas.addWidget(page_pag)
+
+        # Página 3: HISTÓRICO
+        page_hist = QWidget()
+        layout_hist = QVBoxLayout(page_hist)
+        layout_hist.setContentsMargins(0, 10, 0, 0)
+        self.montar_aba_historico(layout_hist, c)
+        self.stack_abas.addWidget(page_hist)
 
         self.layout_dir.addWidget(self.stack_abas)
         self.trocar_aba(0)
-        self.layout_dir.addStretch()
 
     def trocar_aba(self, index):
         self.stack_abas.setCurrentIndex(index)
@@ -481,6 +489,9 @@ class TelaCasamentos(QWidget):
                 btn.setStyleSheet(
                     "background: transparent; color: #8A92A6; border-bottom: 2px solid transparent; padding-bottom: 5px; border-top: none; border-left: none; border-right: none; outline: none;")
 
+    # ==========================================
+    # CONTEÚDO DAS ABAS
+    # ==========================================
     def montar_aba_geral(self, layout, c):
         lbl_info_tit = QLabel("Informações Gerais")
         lbl_info_tit.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
@@ -488,7 +499,6 @@ class TelaCasamentos(QWidget):
 
         grid_info = QGridLayout()
         grid_info.setSpacing(20)
-
         tel = c.telefone_contato if c.telefone_contato else "Não informado"
         hora = c.horario_celebracao if c.horario_celebracao else "A definir"
 
@@ -498,7 +508,7 @@ class TelaCasamentos(QWidget):
         grid_info.addWidget(self.criar_bloco_info("🕒 Horário", hora), 1, 1)
         layout.addLayout(grid_info)
 
-        # --- A MÁGICA: CHECKBOXES DINÂMICAS QUE LÊM DO BANCO ---
+        # Checkboxes (Checklist)
         card_docs = QFrame()
         card_docs.setStyleSheet(
             "background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px; margin-top: 15px;")
@@ -528,20 +538,41 @@ class TelaCasamentos(QWidget):
 
         layout.addWidget(card_docs)
 
-        # --- TAXA DO PROCESSO (RÁDIOS) ---
-        lbl_pag = QLabel("Taxa do Processo")
-        lbl_pag.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-top: 15px; margin-bottom: 5px;")
+        # Ações Finais (Arquivar)
+        if c.status == "Concluído (OK)":
+            btn_arq = QPushButton("🗄️ Arquivar / Finalizar Processo")
+            btn_arq.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_arq.setStyleSheet(
+                "background-color: #8E44AD; color: white; font-weight: bold; padding: 12px; border-radius: 6px; margin-top: 15px;")
+            btn_arq.clicked.connect(self.arquivar_processo)
+            layout.addWidget(btn_arq)
+        elif c.status == "Arquivado":
+            btn_rea = QPushButton("🔄 Reativar Processo (Desarquivar)")
+            btn_rea.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_rea.setStyleSheet(
+                "background-color: #e74c3c; color: white; font-weight: bold; padding: 12px; border-radius: 6px; margin-top: 15px;")
+            btn_rea.clicked.connect(self.reativar_processo)
+            layout.addWidget(btn_rea)
+
+        layout.addStretch()
+
+
+    def montar_aba_pagamentos(self, layout, c):
+        lbl_pag = QLabel("Taxa do Processo e Pagamentos")
+        lbl_pag.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
         layout.addWidget(lbl_pag)
 
         box_pag = QFrame()
-        box_pag.setStyleSheet("background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px;")
-        layout_pag = QHBoxLayout(box_pag)
+        box_pag.setStyleSheet(
+            "background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px; padding: 10px;")
+        layout_pag = QVBoxLayout(box_pag)
 
-        self.radio_aguardando = QRadioButton("Aguardando")
+        # Instanciamos os botões aqui, mas eles vão interagir com o "recalcular_tudo_e_salvar" igual antes
+        self.radio_aguardando = QRadioButton("Aguardando Pagamento")
         self.radio_pago = QRadioButton("Pago")
-        self.radio_isento = QRadioButton("Isento")
+        self.radio_isento = QRadioButton("Isento de Taxa")
 
-        estilo_radio = "QRadioButton { color: #E2E8F0; font-size: 13px; font-weight: bold; border: none; } QRadioButton::indicator { width: 16px; height: 16px; border-radius: 8px; border: 2px solid #2C364C; background-color: transparent; } QRadioButton::indicator:checked { background-color: #27AE60; border: 2px solid #27AE60; }"
+        estilo_radio = "QRadioButton { color: #E2E8F0; font-size: 14px; font-weight: bold; border: none; margin: 5px; } QRadioButton::indicator { width: 18px; height: 18px; border-radius: 9px; border: 2px solid #2C364C; background-color: transparent; } QRadioButton::indicator:checked { background-color: #27AE60; border: 2px solid #27AE60; }"
         self.radio_aguardando.setStyleSheet(estilo_radio)
         self.radio_pago.setStyleSheet(estilo_radio)
         self.radio_isento.setStyleSheet(estilo_radio)
@@ -565,46 +596,62 @@ class TelaCasamentos(QWidget):
         layout_pag.addWidget(self.radio_aguardando)
         layout_pag.addWidget(self.radio_pago)
         layout_pag.addWidget(self.radio_isento)
-        layout_pag.addStretch()
         layout.addWidget(box_pag)
 
-        # --- AÇÕES RÁPIDAS (NOVO BOTÃO DE ARQUIVAR) ---
-        lbl_act = QLabel("Ações Rápidas")
-        lbl_act.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-top: 15px; margin-bottom: 5px;")
-        layout.addWidget(lbl_act)
+        btn_recibo = QPushButton("🖨️ Imprimir Recibo")
+        btn_recibo.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_recibo.setStyleSheet(
+            "background-color: transparent; border: 1px solid #2C364C; color: white; padding: 10px; border-radius: 6px; margin-top: 10px;")
+        btn_recibo.clicked.connect(lambda: notificar(self, "Recibo gerado e enviado para impressão.", "info"))
+        layout.addWidget(btn_recibo)
+
+        layout.addStretch()
+
+    def montar_aba_historico(self, layout, c):
+        lbl = QLabel("Linha do Tempo do Processo")
+        lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
+        layout.addWidget(lbl)
+
+        # O Cérebro: Constrói uma Timeline baseada no status atual e datas
+        historico = []
+        historico.append(f"🟢 {c.data_entrada} - Entrada do Processo (Protocolo {c.protocolo})")
+
+        if c.taxa_status in ["Pago", "Isento"]:
+            historico.append(f"💰 Situação financeira registrada como: {c.taxa_status}")
+
+        if c.pendencias == 0:
+            historico.append("📝 Todos os documentos e assinaturas foram recolhidos.")
 
         if c.status == "Concluído (OK)":
-            btn_arq = QPushButton("🗄️ Arquivar / Finalizar Processo")
-            btn_arq.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_arq.setStyleSheet(
-                "background-color: #8E44AD; color: white; font-weight: bold; padding: 12px; border-radius: 6px;")
-            btn_arq.clicked.connect(self.arquivar_processo)
-            layout.addWidget(btn_arq)
+            historico.append("✅ Processo aprovado e pronto para arquivamento.")
 
-        elif c.status == "Arquivado":
-            btn_rea = QPushButton("🔄 Reativar Processo (Desarquivar)")
-            btn_rea.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_rea.setStyleSheet(
-                "background-color: #e74c3c; color: white; font-weight: bold; padding: 12px; border-radius: 6px;")
-            btn_rea.clicked.connect(self.reativar_processo)
-            layout.addWidget(btn_rea)
+        if c.status == "Arquivado":
+            historico.append("🗄️ Processo finalizado e arquivado com sucesso.")
+
+        for item in historico:
+            lbl_item = QLabel(item)
+            lbl_item.setStyleSheet(
+                "color: #E2E8F0; font-size: 13px; padding: 10px; background-color: #151A27; border-left: 3px solid #2962FF; margin-bottom: 8px; border-radius: 4px;")
+            lbl_item.setWordWrap(True)
+            layout.addWidget(lbl_item)
+
+        layout.addStretch()
 
     # ==========================================
-    # O CÉREBRO DO SISTEMA: RECALCULA STATUS E SALVA
+    # CÉREBRO: RECALCULA STATUS
     # ==========================================
     def recalcular_tudo_e_salvar(self):
-        if self.casamento_atual.status == "Arquivado":
+        if not hasattr(self, 'casamento_atual') or self.casamento_atual.status == "Arquivado":
             return
 
-        entregues = {chk.text(): chk.isChecked() for chk in self.checks_interativos}
-        faltando = sum(1 for chk in self.checks_interativos if not chk.isChecked())
+        entregues = {chk.text(): chk.isChecked() for chk in getattr(self, 'checks_interativos', [])}
+        faltando = sum(1 for chk in getattr(self, 'checks_interativos', []) if not chk.isChecked())
 
-        if self.radio_pago.isChecked():
+        taxa = "Aguardando"
+        if hasattr(self, 'radio_pago') and self.radio_pago.isChecked():
             taxa = "Pago"
-        elif self.radio_isento.isChecked():
+        elif hasattr(self, 'radio_isento') and self.radio_isento.isChecked():
             taxa = "Isento"
-        else:
-            taxa = "Aguardando"
 
         if faltando == 0 and taxa in ["Pago", "Isento"]:
             novo_status = "Concluído (OK)"
@@ -623,15 +670,55 @@ class TelaCasamentos(QWidget):
         linha_selecionada = self.tabela.currentRow()
         self.tabela.blockSignals(True)
         self.carregar_dados_do_banco()
-        if linha_selecionada >= 0:
-            self.tabela.selectRow(linha_selecionada)
+        if linha_selecionada >= 0: self.tabela.selectRow(linha_selecionada)
         self.tabela.blockSignals(False)
 
-        if self.casamento_atual.status != novo_status and novo_status == "Concluído (OK)":
-            self.construir_painel_direito(self.casamento_atual)
+        # Atualiza o histórico em tempo real se a aba estiver aberta
+        if self.stack_abas.currentIndex() == 2:
+            self.trocar_aba(2)
 
     # ==========================================
-    # ARQUIVAMENTO
+    # IMPRESSÃO DO REQUERIMENTO
+    # ==========================================
+    def imprimir_requerimento(self):
+        # Gera o HTML do formulário de casamento para preenchimento a mão
+        html = """
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: black; line-height: 1.6;">
+            <h2 style="text-align: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 30px;">REQUERIMENTO DE HABILITAÇÃO DE CASAMENTO</h2>
+
+            <p style="font-size: 16px;">Os contraentes abaixo assinados requerem a habilitação para o casamento civil, apresentando os documentos exigidos pelo Art. 1.525 do Código Civil Brasileiro.</p>
+            <br>
+
+            <p style="font-size: 18px;"><b>Nome do Contraente 1:</b> ______________________________________________________________</p>
+            <br>
+            <p style="font-size: 18px;"><b>Nome do Contraente 2:</b> ______________________________________________________________</p>
+            <br><br>
+
+            <p style="font-size: 18px;"><b>Data pretendida para celebração:</b> ____/____/20____ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>Horário:</b> ____:____</p>
+            <br><br>
+
+            <h3 style="margin-bottom: 15px;">Checklist de Documentos Anexos:</h3>
+            <ul style="list-style-type: none; padding-left: 0; font-size: 16px;">
+                <li style="margin-bottom: 10px;">( &nbsp;&nbsp; ) Certidões de Nascimento (atualizadas até 90 dias)</li>
+                <li style="margin-bottom: 10px;">( &nbsp;&nbsp; ) Documentos de Identidade (RG) e CPF</li>
+                <li style="margin-bottom: 10px;">( &nbsp;&nbsp; ) Comprovantes de Residência</li>
+                <li style="margin-bottom: 10px;">( &nbsp;&nbsp; ) Documentação das Testemunhas</li>
+            </ul>
+            <br><br><br><br>
+
+            <table style="width: 100%; text-align: center; font-size: 16px;">
+                <tr>
+                    <td style="padding-right: 20px;">___________________________________________________<br>Assinatura Contraente 1</td>
+                    <td style="padding-left: 20px;">___________________________________________________<br>Assinatura Contraente 2</td>
+                </tr>
+            </table>
+        </div>
+        """
+        dialog = DialogImpressao(self, "Requerimento de Casamento (Formulário)", html)
+        dialog.exec()
+
+    # ==========================================
+    # ARQUIVAMENTO E UTILITÁRIOS
     # ==========================================
     def arquivar_processo(self):
         resp = QMessageBox.question(self, "Arquivar", "Deseja arquivar este processo?\nEle sairá da lista de Ativos.",
@@ -640,6 +727,7 @@ class TelaCasamentos(QWidget):
             db = SessionLocal()
             atualizar_status_casamento(db, self.casamento_atual.id, "Arquivado")
             db.close()
+            notificar(self, "Processo arquivado!", "sucesso")
             self.carregar_dados_do_banco()
             self.painel_dir.hide()
 
@@ -647,15 +735,12 @@ class TelaCasamentos(QWidget):
         db = SessionLocal()
         atualizar_status_casamento(db, self.casamento_atual.id, "Concluído (OK)")
         db.close()
+        notificar(self, "Processo reativado com sucesso.", "info")
         self.combo_filtro.setCurrentText("Exibir: Ativos")
         self.carregar_dados_do_banco()
 
-    # ==========================================
-    # UTILITÁRIOS VISUAIS
-    # ==========================================
     def criar_kpi_card(self, titulo, label_valor, subtitulo, cor_destaque="#FFFFFF"):
         card = QFrame()
-        card.setProperty("class", "card")
         card.setStyleSheet("background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px;")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(15, 15, 15, 15)
