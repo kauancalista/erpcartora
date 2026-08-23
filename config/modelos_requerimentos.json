@@ -1,0 +1,79 @@
+{
+    "Retificação de Registro Civil": {
+        "modalidades": ["Pago", "Hipossuficiência"],
+        "arquivo_docx": "RETIFICACAO_HIPOSSUFICIENCIA.docx",
+        "descricao": "Utilizado para corrigir erros materiais em certidões de nascimento, casamento ou óbito.",
+        "linhas": [
+            [
+                {"label": "Nome do Requerente", "tag": "nome_requerente", "flex": 1}
+            ],
+            [
+                {"label": "Endereço Completo", "tag": "endereço_requerente", "flex": 1}
+            ],
+            [
+                {"label": "CPF", "tag": "cpf_requerente", "mask": "cpf", "flex": 2},
+                {"label": "Nº RG", "tag": "rg_requerente", "flex": 2},
+                {"label": "Órgão (Ex: SDS)", "tag": "org_rg", "flex": 1},
+                {"label": "UF (Ex: PE)", "tag": "uf_rg", "flex": 1}
+            ],
+            [
+                {"label": "Nome do Registrado", "tag": "nome_do_registrado", "flex": 1}
+            ],
+            [
+                {"label": "Livro", "tag": "livro", "mask": "livro", "flex": 1},
+                {"label": "Folha", "tag": "folha", "flex": 1},
+                {"label": "Termo", "tag": "termo", "flex": 1}
+            ],
+            [
+                {"label": "Onde Consta (O Erro)", "tag": "onde_consta", "flex": 1},
+                {"label": "Passe a Constar (A Correção)", "tag": "passa_constar", "flex": 1}
+            ],
+            [
+                {"label": "Razão do Pedido", "tag": "razao_pedido", "flex": 1}
+            ],
+            [
+                {"label": "Provas em Anexo", "tag": "prova_anexos", "flex": 1}
+            ]
+        ]
+    },
+    "Reconhecimento paternidade voluntário": {
+        "modalidades": ["Reg. não assina", "Reg. assina", "Reg. maior de 18", "CRC"],
+        "arquivo_docx": "modelo_reconhecimento_paternidade.docx",
+        "descricao": "Procedimento para reconhecimento voluntário de paternidade.",
+        "linhas": [
+            [
+                {"label": "Nome do Declarante (Pai)", "tag": "nome_declarante", "flex": 3},
+                {"label": "Estado Civil", "tag": "estado_civil", "mask": "estado_civil", "flex": 2}
+            ],
+            [
+                {"label": "Naturalidade", "tag": "naturalidade", "flex": 1},
+                {"label": "CPF do Declarante", "tag": "cpf", "mask": "cpf", "flex": 1}
+            ],
+            [
+                {"label": "Nº RG", "tag": "n_rg", "flex": 2},
+                {"label": "Órgão Emissor", "tag": "org_rg", "flex": 1},
+                {"label": "UF", "tag": "uf_rg", "flex": 1}
+            ],
+            [
+                {"label": "Pai do Declarante", "tag": "pai_declarante", "flex": 1},
+                {"label": "Mãe do Declarante", "tag": "mae_declarante", "flex": 1}
+            ],
+            [
+                {"label": "Endereço Completo", "tag": "endereco", "flex": 1}
+            ],
+            [
+                {"label": "Nome do Registrado (Filho)", "tag": "nome_registrado", "flex": 2},
+                {"label": "Data Nascimento", "tag": "data_nascimento_regitsrado", "mask": "data", "flex": 1}
+            ],
+            [
+                {"label": "Cartório de Registro", "tag": "cartorio_registro", "flex": 2},
+                {"label": "Livro", "tag": "livro", "mask": "livro", "flex": 1},
+                {"label": "Folha", "tag": "folha", "flex": 1},
+                {"label": "Termo", "tag": "termo", "flex": 1}
+            ],
+            [
+                {"label": "Nome Após Reconhecimento", "tag": "nome_registrado_apos_reconhecimento", "flex": 1}
+            ]
+        ]
+    }
+}
