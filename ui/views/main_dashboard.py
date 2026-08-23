@@ -8,6 +8,10 @@ from ui.views.view_processos import TelaProcessos
 from ui.views.view_tarefas import TelaTarefas
 from ui.views.view_requerimentos import TelaRequerimentos
 from ui.views.view_casamentos import TelaCasamentos
+from ui.views.view_agenda import TelaAgenda
+from PyQt6.QtCore import QTimer
+from ui.componentes import notificar
+
 
 
 
@@ -81,6 +85,7 @@ class MainWindow(QMainWindow):
         tela_tar = TelaTarefas()
         tela_req = TelaRequerimentos()
         tela_cas = TelaCasamentos()
+        tela_agenda = TelaAgenda()
 
         # Adicionando na pilha exata (0 a 3)
         self.stack.addWidget(tela_dash)  # 0
@@ -88,7 +93,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(tela_tar)  # 2
         self.stack.addWidget(tela_req)  # 3
         self.stack.addWidget(QWidget())  # 4 - Relatórios (Placeholder)
-        self.stack.addWidget(QWidget())  # 5 - Agenda (Placeholder)
+        self.stack.addWidget(tela_agenda)  # 5 - Agenda (Placeholder)
         self.stack.addWidget(QWidget())  # 6 - Config (Placeholder)
         self.stack.addWidget(tela_cas)  # 7 - Config (Placeholder)
 
@@ -98,6 +103,16 @@ class MainWindow(QMainWindow):
         # Inicia o programa abrindo o Dashboard por padrão
         self.btn_dashboard.setChecked(True)
         self.mudar_tela(0)
+
+        # Chama a notificação 1 segundo após o app abrir
+        QTimer.singleShot(1000, self.notificacao_bom_dia)
+
+        # Crie esta nova função fora do __init__, como parte da classe MainWindow:
+
+    def notificacao_bom_dia(self):
+        # Aqui no futuro faremos ele ler do banco, mas já deixamos a mecânica pronta:
+        notificar(self, "Bom dia! Você tem 1 Casamento e 2 Tarefas para hoje. 📅", "info")
+
 
     def criar_botao_menu(self, texto):
         btn = QPushButton(texto)

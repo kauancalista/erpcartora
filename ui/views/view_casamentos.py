@@ -1,161 +1,73 @@
 import os
 import random
+from datetime import datetime
+import json
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
                              QPushButton, QScrollArea, QGridLayout, QComboBox,
-                             QStackedWidget, QMessageBox, QGraphicsOpacityEffect)
+                             QStackedWidget, QMessageBox, QGraphicsOpacityEffect,
+                             QLineEdit, QFormLayout, QCheckBox, QRadioButton)
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QIcon, QColor, QFont
+from PyQt6.QtGui import QColor
 
-from ui.componentes import BarraPesquisa
-
-# ==========================================
-# MOTOR DE DADOS EM MEMÓRIA (TOTALMENTE FUNCIONAL)
-# ==========================================
-DADOS_CASAMENTOS = [
-    {
-        "protocolo": "CAS-2026-0042", "noivos": "João Silva e Maria Santos",
-        "data_entrada": "17/08/2026", "data_prevista": "20/09/2026",
-        "status": "Em Andamento", "pendencias": 2,
-        "detalhes": {
-            "noivo_nome": "João Silva", "noivo_tel": "(81) 99999-1111", "noivo_email": "joaosilva@email.com",
-            "noiva_nome": "Maria Santos", "noiva_tel": "(81) 99999-2222", "noiva_email": "mariasantos@email.com",
-            "regime": "Comunhão Parcial", "data_casamento": "20/09/2026 às 16:00",
-            "oficial": "Kauan Feitosa", "obs": "Casal veio por indicação da noiva."
-        }
-    },
-    {
-        "protocolo": "CAS-2026-0041", "noivos": "Lucas Lima e Ana Oliveira",
-        "data_entrada": "16/08/2026", "data_prevista": "15/09/2026",
-        "status": "Aguardando Docs", "pendencias": 3,
-        "detalhes": {
-            "noivo_nome": "Lucas Lima", "noivo_tel": "(81) 98888-1111", "noivo_email": "lucas@email.com",
-            "noiva_nome": "Ana Oliveira", "noiva_tel": "(81) 98888-2222", "noiva_email": "ana@email.com",
-            "regime": "Separação Total", "data_casamento": "15/09/2026 às 10:00",
-            "oficial": "Kauan Feitosa", "obs": "Falta RG atualizado do noivo."
-        }
-    },
-    {
-        "protocolo": "CAS-2026-0039", "noivos": "Rafael Alves e Beatriz Ferreira",
-        "data_entrada": "14/08/2026", "data_prevista": "12/09/2026",
-        "status": "Concluído", "pendencias": 0,
-        "detalhes": {
-            "noivo_nome": "Rafael Alves", "noivo_tel": "(81) 97777-1111", "noivo_email": "rafael@email.com",
-            "noiva_nome": "Beatriz Ferreira", "noiva_tel": "(81) 97777-2222", "noiva_email": "beatriz@email.com",
-            "regime": "Comunhão Universal", "data_casamento": "12/09/2026 às 14:00",
-            "oficial": "Kauan Feitosa", "obs": "Documentação 100% aprovada."
-        }
-    }
-]
+from database.conexao import SessionLocal
+from database.crud import (listar_todos_casamentos, criar_casamento,
+                           atualizar_casamento_interativo, atualizar_status_casamento)
+from ui.componentes import BarraPesquisa, LabelStatus, wrap_transparente, obter_estilo_status
 
 
 class TelaCasamentos(QWidget):
     def __init__(self):
         super().__init__()
+        self.todos_casamentos = []
 
         layout_principal = QHBoxLayout(self)
         layout_principal.setContentsMargins(0, 0, 0, 0)
         layout_principal.setSpacing(0)
 
         # ==========================================
-        # PAINEL ESQUERDO (LISTA MASTER)
+        # PAINEL ESQUERDO (A Mágica da Transição)
         # ==========================================
-        self.painel_esq = QWidget()
-        self.painel_esq.setStyleSheet("background-color: #0B0E14;")
-        layout_esq = QVBoxLayout(self.painel_esq)
-        layout_esq.setContentsMargins(30, 30, 20, 30)
-        layout_esq.setSpacing(20)
+        self.painel_esq_base = QWidget()
+        self.painel_esq_base.setStyleSheet("background-color: #0B0E14;")
+        layout_esq_base = QVBoxLayout(self.painel_esq_base)
+        layout_esq_base.setContentsMargins(0, 0, 0, 0)
 
-        # --- CABEÇALHO COM O BOTÃO DE ADICIONAR FORA ---
-        box_topo_esq = QHBoxLayout()
-        lbl_titulo = QLabel("Casamentos")
-        lbl_titulo.setStyleSheet("font-size: 26px; font-weight: bold; color: white;")
+        self.stack_esq = QStackedWidget()
 
-        btn_novo_casamento = QPushButton("+ Adicionar Casamento")
-        btn_novo_casamento.setStyleSheet(
-            "background-color: #2962FF; color: white; font-weight: bold; padding: 10px 18px; border-radius: 6px; font-size: 13px;")
-        btn_novo_casamento.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_novo_casamento.clicked.connect(self.adicionar_novo_casamento)  # Ação real!
+        self.efeito_fade_esq = QGraphicsOpacityEffect(self.stack_esq)
+        self.stack_esq.setGraphicsEffect(self.efeito_fade_esq)
+        self.animacao_esq = QPropertyAnimation(self.efeito_fade_esq, b"opacity")
+        self.animacao_esq.setDuration(250)
+        self.animacao_esq.setStartValue(0.0)
+        self.animacao_esq.setEndValue(1.0)
+        self.animacao_esq.setEasingCurve(QEasingCurve.Type.InOutQuad)
 
-        box_topo_esq.addWidget(lbl_titulo)
-        box_topo_esq.addStretch()
-        box_topo_esq.addWidget(btn_novo_casamento)
-        layout_esq.addLayout(box_topo_esq)
+        self.pagina_lista = QWidget()
+        self.pagina_form = QWidget()
 
-        # --- KPIs (4 CARDS) ---
-        layout_kpis = QHBoxLayout()
-        layout_kpis.setSpacing(15)
-        layout_kpis.addWidget(self.criar_kpi_card("Total", "42", "Este mês"))
-        layout_kpis.addWidget(self.criar_kpi_card("Em Andamento", "18", "42,8%", "#f39c12"))
-        layout_kpis.addWidget(self.criar_kpi_card("Pendências", "9", "21,4%", "#e74c3c"))
-        layout_kpis.addWidget(self.criar_kpi_card("Concluídos", "15", "35,7%", "#2ecc71"))
-        layout_esq.addLayout(layout_kpis)
+        self.montar_pagina_lista()
+        self.montar_pagina_form()
 
-        # --- FILTROS E PESQUISA ---
-        layout_filtros = QHBoxLayout()
-        self.pesquisa = BarraPesquisa(placeholder="🔍 Pesquisar por nome, protocolo...")
-        self.pesquisa.textChanged.connect(self.filtrar_lista)
+        self.stack_esq.addWidget(self.pagina_lista)
+        self.stack_esq.addWidget(self.pagina_form)
 
-        btn_filtro = QPushButton(" 🜲 Filtros")
-        btn_filtro.setStyleSheet(
-            "background-color: #151A27; border: 1px solid #1E2532; padding: 10px 15px; border-radius: 6px; color: white;")
-        btn_filtro.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        combo_ordem = QComboBox()
-        combo_ordem.addItems(["Mais recentes", "Mais antigos", "Urgentes"])
-        combo_ordem.setStyleSheet(
-            "background-color: #151A27; border: 1px solid #1E2532; padding: 10px; border-radius: 6px; color: white;")
-
-        layout_filtros.addWidget(self.pesquisa)
-        layout_filtros.addWidget(btn_filtro)
-        layout_filtros.addWidget(combo_ordem)
-        layout_esq.addLayout(layout_filtros)
-
-        # --- TABELA DE CASAMENTOS (Layout Ajustado) ---
-        self.tabela = QTableWidget()
-        self.tabela.setColumnCount(6)
-        self.tabela.setHorizontalHeaderLabels(["Protocolo", "Noivos", "Entrada", "Prevista", "Status", "Pend."])
-        self.tabela.setAlternatingRowColors(True)
-        self.tabela.verticalHeader().setDefaultSectionSize(55)
-        self.tabela.verticalHeader().setVisible(False)
-        self.tabela.setShowGrid(False)
-        self.tabela.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.tabela.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.tabela.setStyleSheet("""
-            QTableWidget { background-color: #0B0E14; alternate-background-color: #11151F; border: 1px solid #1E2532; border-radius: 8px; outline: none; }
-            QTableWidget::item { border: none; padding-left: 5px; }
-            QTableWidget::item:selected { background-color: #1A2133; color: white; }
-            QHeaderView::section { background-color: transparent; color: #8A92A6; font-weight: bold; font-size: 12px; border: none; border-bottom: 1px solid #1E2532; padding: 12px 5px; text-align: left; }
-        """)
-
-        # Ajuste Fino Cirúrgico das Colunas (Evita esmagamento)
-        header = self.tabela.horizontalHeader()
-        self.tabela.setColumnWidth(0, 115)  # Protocolo
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Noivos estica
-        self.tabela.setColumnWidth(2, 85)  # Entrada
-        self.tabela.setColumnWidth(3, 85)  # Prevista
-        self.tabela.setColumnWidth(4, 115)  # Status (Espaço para a pílula)
-        self.tabela.setColumnWidth(5, 55)  # Pendências
-
-        self.tabela.itemSelectionChanged.connect(self.ao_selecionar_casamento)
-        layout_esq.addWidget(self.tabela)
+        layout_esq_base.addWidget(self.stack_esq)
 
         # ==========================================
-        # PAINEL DIREITO (DETALHES COM ANIMAÇÃO)
+        # PAINEL DIREITO (DETALHES)
         # ==========================================
         self.painel_dir = QFrame()
         self.painel_dir.setStyleSheet("background-color: #11151F; border-left: 1px solid #1E2532;")
-        self.painel_dir.setMinimumWidth(500)
-        self.painel_dir.setMaximumWidth(600)
+         # self.painel_dir.setMinimumWidth(500)
+        #self.painel_dir.setMaximumWidth(600)
 
-        # --- EFEITO DE ANIMAÇÃO FADE-IN ---
-        self.efeito_opacidade = QGraphicsOpacityEffect(self.painel_dir)
-        self.painel_dir.setGraphicsEffect(self.efeito_opacidade)
-        self.animacao_fade = QPropertyAnimation(self.efeito_opacidade, b"opacity")
-        self.animacao_fade.setDuration(300)  # 300 milissegundos
-        self.animacao_fade.setStartValue(0.0)
-        self.animacao_fade.setEndValue(1.0)
-        self.animacao_fade.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self.efeito_opacidade_dir = QGraphicsOpacityEffect(self.painel_dir)
+        self.painel_dir.setGraphicsEffect(self.efeito_opacidade_dir)
+        self.animacao_dir = QPropertyAnimation(self.efeito_opacidade_dir, b"opacity")
+        self.animacao_dir.setDuration(250)
+        self.animacao_dir.setStartValue(0.0)
+        self.animacao_dir.setEndValue(1.0)
 
         layout_dir_base = QVBoxLayout(self.painel_dir)
         layout_dir_base.setContentsMargins(0, 0, 0, 0)
@@ -172,107 +84,326 @@ class TelaCasamentos(QWidget):
         scroll_dir.setWidget(self.container_dir)
         layout_dir_base.addWidget(scroll_dir)
 
-        # Divisão da tela
-        layout_principal.addWidget(self.painel_esq, 6)
+        layout_principal.addWidget(self.painel_esq_base, 6)
         layout_principal.addWidget(self.painel_dir, 4)
 
-        self.carregar_tabela()
+        self.carregar_dados_do_banco()
 
     # ==========================================
-    # LÓGICA DE DADOS (LISTA ESQUERDA)
+    # MONTAGEM DA LISTA (PÁGINA 0)
     # ==========================================
-    def adicionar_novo_casamento(self):
-        """Simula a criação de um processo real para testar a reatividade da tela"""
-        id_aleatorio = random.randint(100, 999)
-        novo = {
-            "protocolo": f"CAS-2026-0{id_aleatorio}", "noivos": "Novo Casal Exemplo",
-            "data_entrada": "21/08/2026", "data_prevista": "21/09/2026",
-            "status": "Em Andamento", "pendencias": 1,
-            "detalhes": {
-                "noivo_nome": "Exemplo Noivo", "noivo_tel": "(00) 00000-0000", "noivo_email": "noivo@email.com",
-                "noiva_nome": "Exemplo Noiva", "noiva_tel": "(00) 00000-0000", "noiva_email": "noiva@email.com",
-                "regime": "Não Definido", "data_casamento": "A definir",
-                "oficial": "Kauan Feitosa", "obs": "Criado via botão superior."
-            }
-        }
-        DADOS_CASAMENTOS.insert(0, novo)  # Coloca no topo
-        self.carregar_tabela()
-        self.tabela.selectRow(0)  # Já foca no novo automaticamente
-        QMessageBox.information(self, "Sucesso", "Novo processo de casamento iniciado com sucesso!")
+    def montar_pagina_lista(self):
+        layout = QVBoxLayout(self.pagina_lista)
+        layout.setContentsMargins(30, 30, 20, 30)
+        layout.setSpacing(20)
 
-    def carregar_tabela(self, termo=""):
+        box_topo = QHBoxLayout()
+        lbl_titulo = QLabel("Casamentos")
+        lbl_titulo.setStyleSheet("font-size: 26px; font-weight: bold; color: white;")
+
+        btn_novo = QPushButton("+ Formulário de Entrada")
+        btn_novo.setStyleSheet(
+            "background-color: #2962FF; color: white; font-weight: bold; padding: 10px 18px; border-radius: 6px;")
+        btn_novo.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_novo.clicked.connect(self.transicionar_para_form)
+
+        box_topo.addWidget(lbl_titulo)
+        box_topo.addStretch()
+        box_topo.addWidget(btn_novo)
+        layout.addLayout(box_topo)
+
+        self.lbl_kpi_total = QLabel("0")
+        self.lbl_kpi_ativos = QLabel("0")
+        self.lbl_kpi_pendencias = QLabel("0")
+        self.lbl_kpi_concluidos = QLabel("0")
+
+        layout_kpis = QHBoxLayout()
+        layout_kpis.setSpacing(15)
+        layout_kpis.addWidget(self.criar_kpi_card("Total", self.lbl_kpi_total, "Cadastros"))
+        layout_kpis.addWidget(self.criar_kpi_card("Em Andamento", self.lbl_kpi_ativos, "Ativos", "#2962FF"))
+        layout_kpis.addWidget(self.criar_kpi_card("Com Pendências", self.lbl_kpi_pendencias, "Atenção", "#e74c3c"))
+        layout_kpis.addWidget(self.criar_kpi_card("Concluídos", self.lbl_kpi_concluidos, "Prontos", "#2ecc71"))
+        layout.addLayout(layout_kpis)
+
+        layout_filtros = QHBoxLayout()
+        self.pesquisa = BarraPesquisa(placeholder="🔍 Pesquisar por noivos, protocolo...")
+        self.pesquisa.textChanged.connect(self.filtrar_lista)
+
+        self.combo_filtro = QComboBox()
+        self.combo_filtro.addItems(["Exibir: Ativos", "Exibir: Todos", "Exibir: Arquivados"])
+        self.combo_filtro.setStyleSheet(
+            "background-color: #151A27; border: 1px solid #1E2532; padding: 8px 15px; border-radius: 6px; color: white;")
+        self.combo_filtro.currentTextChanged.connect(self.filtrar_lista)
+
+        layout_filtros.addWidget(self.pesquisa)
+        layout_filtros.addWidget(self.combo_filtro)
+        layout.addLayout(layout_filtros)
+
+        self.tabela = QTableWidget()
+        self.tabela.setColumnCount(6)
+        self.tabela.setHorizontalHeaderLabels(["Protocolo", "Noivos", "Entrada", "Celebração", "Status", "Pend."])
+        self.tabela.setAlternatingRowColors(True)
+        self.tabela.verticalHeader().setDefaultSectionSize(55)
+        self.tabela.verticalHeader().setVisible(False)
+        self.tabela.setShowGrid(False)
+        self.tabela.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.tabela.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.tabela.setStyleSheet("""
+            QTableWidget { background-color: #0B0E14; alternate-background-color: #11151F; border: 1px solid #1E2532; border-radius: 8px; outline: none; }
+            QTableWidget::item { border: none; padding-left: 5px; }
+            QTableWidget::item:selected { background-color: #1A2133; color: white; }
+            QHeaderView::section { background-color: transparent; color: #8A92A6; font-weight: bold; font-size: 12px; border: none; border-bottom: 1px solid #1E2532; padding: 12px 5px; text-align: left; }
+        """)
+
+        header = self.tabela.horizontalHeader()
+        self.tabela.setColumnWidth(0, 115)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.tabela.setColumnWidth(2, 85)
+        self.tabela.setColumnWidth(3, 90)
+        self.tabela.setColumnWidth(4, 130)
+        self.tabela.setColumnWidth(5, 55)
+
+        self.tabela.itemSelectionChanged.connect(self.ao_selecionar_casamento)
+        layout.addWidget(self.tabela)
+
+    # ==========================================
+    # MONTAGEM DO FORMULÁRIO (PÁGINA 1)
+    # ==========================================
+    def montar_pagina_form(self):
+        layout = QVBoxLayout(self.pagina_form)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(20)
+
+        box_topo = QHBoxLayout()
+        btn_voltar = QPushButton("← Voltar")
+        btn_voltar.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_voltar.setStyleSheet(
+            "background-color: transparent; border: 1px solid #2C364C; color: #E2E8F0; padding: 8px 15px; border-radius: 6px;")
+        btn_voltar.clicked.connect(self.transicionar_para_lista)
+
+        lbl_titulo = QLabel("Formulário de Entrada de Casamento")
+        lbl_titulo.setStyleSheet("font-size: 22px; font-weight: bold; color: white; margin-left: 10px;")
+
+        box_topo.addWidget(btn_voltar)
+        box_topo.addWidget(lbl_titulo)
+        box_topo.addStretch()
+        layout.addLayout(box_topo)
+
+        scroll_form = QScrollArea()
+        scroll_form.setWidgetResizable(True)
+        scroll_form.setStyleSheet("border: none; background-color: transparent;")
+        container_scroll = QWidget()
+        layout_form = QVBoxLayout(container_scroll)
+        layout_form.setSpacing(25)
+
+        estilo_input = "background-color: #11151F; padding: 12px; border: 1px solid #1E2532; border-radius: 6px; color: white;"
+
+        lbl_n = QLabel("DADOS DOS NOIVOS")
+        lbl_n.setStyleSheet("color: #8A92A6; font-weight: bold;")
+        layout_form.addWidget(lbl_n)
+
+        grid_nomes = QGridLayout()
+        grid_nomes.setSpacing(15)
+
+        self.inp_noivo = QLineEdit()
+        self.inp_noivo.setPlaceholderText("Nome completo do Noivo")
+        self.inp_noivo.setStyleSheet(estilo_input)
+
+        self.inp_noiva = QLineEdit()
+        self.inp_noiva.setPlaceholderText("Nome completo da Noiva")
+        self.inp_noiva.setStyleSheet(estilo_input)
+
+        self.inp_tel = QLineEdit()
+        self.inp_tel.setPlaceholderText("(00) 00000-0000")
+        self.inp_tel.setStyleSheet(estilo_input)
+
+        grid_nomes.addWidget(QLabel("Noivo:"), 0, 0)
+        grid_nomes.addWidget(self.inp_noivo, 1, 0)
+        grid_nomes.addWidget(QLabel("Noiva:"), 0, 1)
+        grid_nomes.addWidget(self.inp_noiva, 1, 1)
+        grid_nomes.addWidget(QLabel("Telefone / WhatsApp:"), 2, 0)
+        grid_nomes.addWidget(self.inp_tel, 3, 0)
+        layout_form.addLayout(grid_nomes)
+
+        lbl_c = QLabel("COMPROVANTE DE AGENDAMENTO")
+        lbl_c.setStyleSheet("color: #8A92A6; font-weight: bold; margin-top: 15px;")
+        layout_form.addWidget(lbl_c)
+
+        grid_agenda = QGridLayout()
+        grid_agenda.setSpacing(15)
+
+        self.inp_data = QLineEdit()
+        self.inp_data.setPlaceholderText("DD/MM/AAAA")
+        self.inp_data.setStyleSheet(estilo_input)
+
+        self.inp_hora = QLineEdit()
+        self.inp_hora.setPlaceholderText("HH:MM")
+        self.inp_hora.setStyleSheet(estilo_input)
+
+        grid_agenda.addWidget(QLabel("Data da Celebração:"), 0, 0)
+        grid_agenda.addWidget(self.inp_data, 1, 0)
+        grid_agenda.addWidget(QLabel("Horário:"), 0, 1)
+        grid_agenda.addWidget(self.inp_hora, 1, 1)
+        layout_form.addLayout(grid_agenda)
+
+        lbl_d = QLabel("DOCUMENTOS EXIGIDOS")
+        lbl_d.setStyleSheet("color: #8A92A6; font-weight: bold; margin-top: 15px;")
+        layout_form.addWidget(lbl_d)
+
+        self.checks_docs_iniciais = []
+        nomes_docs = [
+            "RG do Noivo", "CPF do Noivo", "RG da Noiva", "CPF da Noiva",
+            "Comprovante de residência", "Certidão Noivo (Até 90 dias)",
+            "Certidão Noiva (Até 90 dias)", "Documentos das Testemunhas",
+            "Noivos assinaram os papéis", "Testemunhas assinaram os papéis"
+        ]
+
+        grid_docs = QGridLayout()
+        estilo_check = "QCheckBox { color: white; font-size: 13px; } QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border: 2px solid #2C364C; } QCheckBox::indicator:checked { background-color: #2962FF; border: none; }"
+
+        row, col = 0, 0
+        for doc in nomes_docs:
+            chk = QCheckBox(doc)
+            chk.setStyleSheet(estilo_check)
+            self.checks_docs_iniciais.append(chk)
+            grid_docs.addWidget(chk, row, col)
+            col += 1
+            if col > 1:
+                col = 0
+                row += 1
+        layout_form.addLayout(grid_docs)
+
+        layout_form.addStretch()
+        scroll_form.setWidget(container_scroll)
+        layout.addWidget(scroll_form)
+
+        btn_salvar = QPushButton("Salvar e Gerar Protocolo")
+        btn_salvar.setStyleSheet(
+            "background-color: #27AE60; font-size: 15px; font-weight: bold; padding: 15px; border-radius: 8px;")
+        btn_salvar.clicked.connect(self.salvar_requerimento)
+        layout.addWidget(btn_salvar)
+
+    def transicionar_para_form(self):
+        self.stack_esq.setCurrentIndex(1)
+        self.animacao_esq.start()
+
+    def transicionar_para_lista(self):
+        self.stack_esq.setCurrentIndex(0)
+        self.animacao_esq.start()
+
+    # ==========================================
+    # SALVANDO E ATUALIZANDO (BANCO DE DADOS)
+    # ==========================================
+    def salvar_requerimento(self):
+        if not self.inp_noivo.text() or not self.inp_noiva.text() or not self.inp_data.text():
+            QMessageBox.warning(self, "Atenção", "Preencha os nomes e a data da celebração!")
+            return
+
+        faltando = sum(1 for chk in self.checks_docs_iniciais if not chk.isChecked())
+        entregues = {chk.text(): chk.isChecked() for chk in self.checks_docs_iniciais}
+
+        id_aleatorio = random.randint(1000, 9999)
+        protocolo_gerado = f"CAS-{datetime.now().year}-{id_aleatorio:04d}"
+
+        db = SessionLocal()
+        criar_casamento(
+            db, protocolo=protocolo_gerado,
+            nome_noivo=self.inp_noivo.text().strip(),
+            nome_noiva=self.inp_noiva.text().strip(),
+            telefone=self.inp_tel.text().strip(),
+            data_entrada=datetime.now().strftime("%d/%m/%Y"),
+            data_celebracao=self.inp_data.text().strip(),
+            horario=self.inp_hora.text().strip(),
+            docs=json.dumps(entregues),
+            pendencias=faltando
+        )
+        db.close()
+
+        self.inp_noivo.clear()
+        self.inp_noiva.clear()
+        self.inp_tel.clear()
+        self.inp_data.clear()
+        self.inp_hora.clear()
+        for chk in self.checks_docs_iniciais: chk.setChecked(False)
+
+        self.transicionar_para_lista()
+        self.carregar_dados_do_banco()
+        self.tabela.selectRow(0)
+
+    def carregar_dados_do_banco(self):
+        db = SessionLocal()
+        self.todos_casamentos = listar_todos_casamentos(db)
+        db.close()
+
+        total = len(self.todos_casamentos)
+        ativos = sum(1 for c in self.todos_casamentos if c.status not in ["Concluído (OK)", "Arquivado"])
+        com_pendencia = sum(1 for c in self.todos_casamentos if c.pendencias > 0 and c.status != "Arquivado")
+        concluidos = sum(1 for c in self.todos_casamentos if c.status == "Concluído (OK)")
+
+        self.lbl_kpi_total.setText(str(total))
+        self.lbl_kpi_ativos.setText(str(ativos))
+        self.lbl_kpi_pendencias.setText(str(com_pendencia))
+        self.lbl_kpi_concluidos.setText(str(concluidos))
+
+        self.filtrar_lista()
+
+    def filtrar_lista(self):
+        termo = self.pesquisa.text().lower().strip()
+        filtro_aba = self.combo_filtro.currentText()
         self.tabela.setRowCount(0)
-        dados_filtrados = [c for c in DADOS_CASAMENTOS if
-                           termo in c['noivos'].lower() or termo in c['protocolo'].lower()]
+
+        dados_filtrados = []
+        for c in self.todos_casamentos:
+            is_ativo = c.status != "Arquivado"
+            if filtro_aba == "Exibir: Ativos" and not is_ativo: continue
+            if filtro_aba == "Exibir: Arquivados" and c.status != "Arquivado": continue
+
+            noivos_texto = f"{c.nome_noivo} e {c.nome_noiva}"
+            if termo in noivos_texto.lower() or termo in c.protocolo.lower():
+                dados_filtrados.append(c)
 
         self.tabela.setRowCount(len(dados_filtrados))
         for linha, c in enumerate(dados_filtrados):
-            # Usando QTableWidgetItem nativo para evitar os quadrados cinzas de fundo
-            item_prot = QTableWidgetItem(c['protocolo'])
+            noivos_texto = f"{c.nome_noivo} e {c.nome_noiva}"
+
+            item_prot = QTableWidgetItem(c.protocolo)
             item_prot.setForeground(QColor("#8A92A6"))
             self.tabela.setItem(linha, 0, item_prot)
 
-            item_noivos = QTableWidgetItem(c['noivos'])
+            item_noivos = QTableWidgetItem(noivos_texto)
             item_noivos.setForeground(QColor("white"))
             font = item_noivos.font()
             font.setBold(True)
             item_noivos.setFont(font)
             self.tabela.setItem(linha, 1, item_noivos)
 
-            item_ent = QTableWidgetItem(c['data_entrada'])
+            item_ent = QTableWidgetItem(c.data_entrada)
             item_ent.setForeground(QColor("#E2E8F0"))
             self.tabela.setItem(linha, 2, item_ent)
 
-            item_prev = QTableWidgetItem(c['data_prevista'])
+            item_prev = QTableWidgetItem(c.data_celebracao)
             item_prev.setForeground(QColor("#E2E8F0"))
             self.tabela.setItem(linha, 3, item_prev)
 
-            # Status Badge (Corrigido com fundo transparente no wrapper)
-            lbl_status = QLabel(c['status'])
-            lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            if c['status'] == "Em Andamento":
-                lbl_status.setStyleSheet(
-                    "background-color: rgba(41, 98, 255, 0.15); color: #2962FF; padding: 4px 10px; border-radius: 10px; font-weight: bold; font-size: 11px;")
-            elif c['status'] == "Concluído":
-                lbl_status.setStyleSheet(
-                    "background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; padding: 4px 10px; border-radius: 10px; font-weight: bold; font-size: 11px;")
-            else:
-                lbl_status.setStyleSheet(
-                    "background-color: rgba(243, 156, 18, 0.15); color: #f39c12; padding: 4px 10px; border-radius: 10px; font-weight: bold; font-size: 11px;")
-            self.tabela.setCellWidget(linha, 4, self.wrap_widget(lbl_status))
+            badge_status = LabelStatus(c.status)
+            self.tabela.setCellWidget(linha, 4, wrap_transparente(badge_status))
 
-            # Pendências
-            if c['pendencias'] > 0:
-                lbl_pend = QLabel(str(c['pendencias']))
-                lbl_pend.setStyleSheet(
-                    "background-color: rgba(231, 76, 60, 0.2); color: #e74c3c; border-radius: 10px; font-weight: bold; font-size: 11px; border: 1px solid #e74c3c;")
+            if c.pendencias > 0:
+                badge_pend = LabelStatus(str(c.pendencias))
+                badge_pend.setStyleSheet(
+                    "background-color: rgba(231, 76, 60, 0.2); color: #e74c3c; border-radius: 12px; font-weight: bold; font-size: 11px;")
             else:
-                lbl_pend = QLabel("✓")
-                lbl_pend.setStyleSheet(
-                    "background-color: rgba(46, 204, 113, 0.2); color: #2ecc71; border-radius: 10px; font-weight: bold; font-size: 11px; border: 1px solid #2ecc71;")
+                badge_pend = LabelStatus("✓")
+                badge_pend.setStyleSheet(
+                    "background-color: rgba(46, 204, 113, 0.2); color: #2ecc71; border-radius: 12px; font-weight: bold; font-size: 11px;")
 
-            lbl_pend.setFixedSize(20, 20)
-            lbl_pend.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.tabela.setCellWidget(linha, 5, self.wrap_widget(lbl_pend))
+            self.tabela.setCellWidget(linha, 5, wrap_transparente(badge_pend))
 
         if dados_filtrados:
             self.tabela.selectRow(0)
 
-    def filtrar_lista(self):
-        self.carregar_tabela(self.pesquisa.text().lower())
-
-    def wrap_widget(self, widget):
-        """O SEGREDO PARA EVITAR O QUADRADO CINZA: background-color: transparent!"""
-        container = QWidget()
-        container.setStyleSheet("background-color: transparent;")
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(5, 0, 5, 0)
-        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(widget)
-        return container
-
     # ==========================================
-    # LÓGICA DO PAINEL DIREITO (FUNCIONAL E ANIMADO)
+    # PAINEL DIREITO INTERATIVO
     # ==========================================
     def ao_selecionar_casamento(self):
         linhas_selecionadas = self.tabela.selectedItems()
@@ -281,81 +412,66 @@ class TelaCasamentos(QWidget):
         linha = self.tabela.currentRow()
         protocolo = self.tabela.item(linha, 0).text()
 
-        dados = next((c for c in DADOS_CASAMENTOS if c["protocolo"] == protocolo), None)
-        if dados:
-            self.construir_painel_direito(dados)
-            self.animacao_fade.start()  # 🎬 Dispara a animação Fade-in!
+        casamento = next((c for c in self.todos_casamentos if c.protocolo == protocolo), None)
+        if casamento:
+            # CORREÇÃO 1: Garante que o painel volte a aparecer caso estivesse arquivado/escondido!
+            self.painel_dir.show()
+            self.construir_painel_direito(casamento)
+            self.animacao_dir.start()
 
-    def construir_painel_direito(self, dados):
-        # Limpeza Total da área direita
-        for i in reversed(range(self.layout_dir.count())):
-            widget = self.layout_dir.itemAt(i).widget()
-            if widget: widget.deleteLater()
-            layout = self.layout_dir.itemAt(i).layout()
-            if layout: self.limpar_layout_interno(layout)
+    def construir_painel_direito(self, c):
+        self.casamento_atual = c
 
-        # --- HEADER DO PAINEL DIREITO ---
+        # CORREÇÃO 2: Limpa da forma limpa, sem acumular sujeira e afundar a tela
+        self.limpar_layout_interno(self.layout_dir)
+
+        # --- CABEÇALHO ---
         layout_header = QHBoxLayout()
-        lbl_prot = QLabel(dados['protocolo'])
+        lbl_prot = QLabel(c.protocolo)
         lbl_prot.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
 
-        lbl_status = QLabel(dados['status'])
-        lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if dados['status'] == "Em Andamento":
-            lbl_status.setStyleSheet(
-                "background-color: rgba(41, 98, 255, 0.15); color: #2962FF; padding: 6px 12px; border-radius: 12px; font-weight: bold; font-size: 11px;")
-        else:
-            lbl_status.setStyleSheet(
-                "background-color: rgba(243, 156, 18, 0.15); color: #f39c12; padding: 6px 12px; border-radius: 12px; font-weight: bold; font-size: 11px;")
+        self.badge_status_direita = LabelStatus(c.status)
 
         layout_header.addWidget(lbl_prot)
-        layout_header.addWidget(lbl_status)
+        layout_header.addWidget(self.badge_status_direita)
         layout_header.addStretch()
         self.layout_dir.addLayout(layout_header)
 
-        # --- ABAS FUNCIONAIS (GERENCIADOR DE ESTADO) ---
+        # --- ABAS ---
         layout_abas = QHBoxLayout()
-        abas = ["Geral", "Documentos", "Pagamentos", "Tarefas", "Histórico"]
+        abas = ["Geral", "Pagamentos", "Histórico"]
         self.botoes_abas = []
-
         for i, aba in enumerate(abas):
             btn = QPushButton(aba)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            # O truque do lambda para passar o índice no clique
             btn.clicked.connect(lambda checked, idx=i: self.trocar_aba(idx))
             self.botoes_abas.append(btn)
             layout_abas.addWidget(btn)
         layout_abas.addStretch()
         self.layout_dir.addLayout(layout_abas)
 
-        # --- CONTEÚDO MUTÁVEL (O STACKED WIDGET) ---
+        # --- O CONTAINER MUTÁVEL ---
         self.stack_abas = QStackedWidget()
-
-        # Página 0: Geral (Completa)
         page_geral = QWidget()
         layout_geral = QVBoxLayout(page_geral)
         layout_geral.setContentsMargins(0, 10, 0, 0)
-        self.montar_aba_geral(layout_geral, dados)
+        self.montar_aba_geral(layout_geral, c)
         self.stack_abas.addWidget(page_geral)
 
-        # Páginas Auxiliares (1 a 4) - Funcionais para demonstrar troca de abas
         for nome_aba in abas[1:]:
             page = QWidget()
             layout_page = QVBoxLayout(page)
-            lbl_temp = QLabel(f"O módulo '{nome_aba}' está em construção.")
+            lbl_temp = QLabel(f"A seção '{nome_aba}' está em construção.")
             lbl_temp.setStyleSheet("color: #8A92A6; font-size: 14px;")
             lbl_temp.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout_page.addWidget(lbl_temp)
             self.stack_abas.addWidget(page)
 
         self.layout_dir.addWidget(self.stack_abas)
-
-        # Inicia na aba Geral (Índice 0)
         self.trocar_aba(0)
         self.layout_dir.addStretch()
 
     def trocar_aba(self, index):
-        """Muda o widget visível e pinta o botão clicado de Azul"""
         self.stack_abas.setCurrentIndex(index)
         for i, btn in enumerate(self.botoes_abas):
             if i == index:
@@ -365,75 +481,179 @@ class TelaCasamentos(QWidget):
                 btn.setStyleSheet(
                     "background: transparent; color: #8A92A6; border-bottom: 2px solid transparent; padding-bottom: 5px; border-top: none; border-left: none; border-right: none; outline: none;")
 
-    def montar_aba_geral(self, layout, dados):
-        """Constrói todo o miolo do painel 'Geral'"""
-        lbl_info_tit = QLabel("Informações do Casamento")
+    def montar_aba_geral(self, layout, c):
+        lbl_info_tit = QLabel("Informações Gerais")
         lbl_info_tit.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
         layout.addWidget(lbl_info_tit)
 
         grid_info = QGridLayout()
         grid_info.setSpacing(20)
 
-        grid_info.addWidget(
-            self.criar_bloco_pessoa("👤 Noivo", dados['detalhes']['noivo_nome'], dados['detalhes']['noivo_tel'],
-                                    dados['detalhes']['noivo_email']), 0, 0)
-        grid_info.addWidget(
-            self.criar_bloco_pessoa("👩 Noiva", dados['detalhes']['noiva_nome'], dados['detalhes']['noiva_tel'],
-                                    dados['detalhes']['noiva_email']), 0, 1)
-        grid_info.addWidget(self.criar_bloco_info("⚖️ Regime de Bens", dados['detalhes']['regime']), 1, 0)
-        grid_info.addWidget(self.criar_bloco_info("📅 Data do Casamento", dados['detalhes']['data_casamento']), 1, 1)
-        grid_info.addWidget(self.criar_bloco_info("📥 Data de Entrada", dados['data_entrada']), 2, 0)
-        grid_info.addWidget(self.criar_bloco_info("🧑‍⚖️ Oficial Responsável", dados['detalhes']['oficial']), 2, 1)
+        tel = c.telefone_contato if c.telefone_contato else "Não informado"
+        hora = c.horario_celebracao if c.horario_celebracao else "A definir"
+
+        grid_info.addWidget(self.criar_bloco_info("👤 Noivos", f"{c.nome_noivo}\n{c.nome_noiva}"), 0, 0)
+        grid_info.addWidget(self.criar_bloco_info("📞 Contato", tel), 0, 1)
+        grid_info.addWidget(self.criar_bloco_info("📅 Celebração", c.data_celebracao), 1, 0)
+        grid_info.addWidget(self.criar_bloco_info("🕒 Horário", hora), 1, 1)
         layout.addLayout(grid_info)
 
-        layout_cards_inferiores = QHBoxLayout()
-        layout_cards_inferiores.setSpacing(15)
-        layout_cards_inferiores.setContentsMargins(0, 15, 0, 0)
-
-        # Card Documentos
+        # --- A MÁGICA: CHECKBOXES DINÂMICAS QUE LÊM DO BANCO ---
         card_docs = QFrame()
-        card_docs.setStyleSheet("background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px;")
+        card_docs.setStyleSheet(
+            "background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px; margin-top: 15px;")
         layout_docs = QVBoxLayout(card_docs)
-        lbl_doc_tit = QLabel("Documentos Necessários")
-        lbl_doc_tit.setStyleSheet("color: white; font-weight: bold; border: none;")
+        lbl_doc_tit = QLabel("Documentos e Assinaturas (Checklist)")
+        lbl_doc_tit.setStyleSheet("color: white; font-weight: bold; border: none; margin-bottom: 5px;")
         layout_docs.addWidget(lbl_doc_tit)
 
-        layout_docs.addWidget(self.criar_item_doc("Documentos Pessoais (RG e CPF)", "Entregue"))
-        layout_docs.addWidget(self.criar_item_doc("Certidão de Nascimento", "Entregue"))
-        layout_docs.addWidget(
-            self.criar_item_doc("Comprovante de Residência", "Pendente" if dados['pendencias'] > 0 else "Entregue"))
+        try:
+            dict_docs = json.loads(c.docs_entregues)
+        except:
+            dict_docs = {}
 
-        btn_gerenciar = QPushButton("Gerenciar Documentos")
-        btn_gerenciar.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_gerenciar.setStyleSheet(
-            "background-color: transparent; border: 1px solid #2C364C; color: white; padding: 8px; border-radius: 6px; margin-top: 10px;")
-        btn_gerenciar.clicked.connect(
-            lambda: QMessageBox.information(self, "Ação", "Abrindo o gerenciador de documentos..."))
-        layout_docs.addWidget(btn_gerenciar)
+        self.checks_interativos = []
+        estilo_check = "QCheckBox { color: #E2E8F0; font-size: 13px; margin: 4px 0; border: none; } QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border: 2px solid #2C364C; } QCheckBox::indicator:checked { background-color: #2962FF; border: none; }"
 
-        # Card Ações
-        card_acoes = QFrame()
-        card_acoes.setStyleSheet("background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px;")
-        layout_acoes = QVBoxLayout(card_acoes)
-        lbl_acoes_tit = QLabel("Ações Rápidas")
-        lbl_acoes_tit.setStyleSheet("color: white; font-weight: bold; border: none;")
-        layout_acoes.addWidget(lbl_acoes_tit)
+        for nome_doc, entregue in dict_docs.items():
+            chk = QCheckBox(nome_doc)
+            chk.setStyleSheet(estilo_check)
+            chk.setChecked(entregue)
+            chk.stateChanged.connect(self.recalcular_tudo_e_salvar)
+            self.checks_interativos.append(chk)
+            layout_docs.addWidget(chk)
 
-        botoes = ["🖨️ Imprimir Requerimento", "📋 Gerar Check-list", "📅 Agendar Casamento"]
-        for b in botoes:
-            btn = QPushButton(b)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(
-                "background-color: transparent; border: 1px solid #2C364C; color: #E2E8F0; text-align: left; padding: 10px; border-radius: 6px;")
-            btn.clicked.connect(
-                lambda checked, nome=b: QMessageBox.information(self, "Ação Disparada", f"Você clicou em: {nome}"))
-            layout_acoes.addWidget(btn)
+            if c.status == "Arquivado":
+                chk.setEnabled(False)
 
-        layout_cards_inferiores.addWidget(card_docs, 6)
-        layout_cards_inferiores.addWidget(card_acoes, 4)
-        layout.addLayout(layout_cards_inferiores)
+        layout.addWidget(card_docs)
 
-    def criar_kpi_card(self, titulo, valor, subtitulo, cor_destaque="#FFFFFF"):
+        # --- TAXA DO PROCESSO (RÁDIOS) ---
+        lbl_pag = QLabel("Taxa do Processo")
+        lbl_pag.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-top: 15px; margin-bottom: 5px;")
+        layout.addWidget(lbl_pag)
+
+        box_pag = QFrame()
+        box_pag.setStyleSheet("background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px;")
+        layout_pag = QHBoxLayout(box_pag)
+
+        self.radio_aguardando = QRadioButton("Aguardando")
+        self.radio_pago = QRadioButton("Pago")
+        self.radio_isento = QRadioButton("Isento")
+
+        estilo_radio = "QRadioButton { color: #E2E8F0; font-size: 13px; font-weight: bold; border: none; } QRadioButton::indicator { width: 16px; height: 16px; border-radius: 8px; border: 2px solid #2C364C; background-color: transparent; } QRadioButton::indicator:checked { background-color: #27AE60; border: 2px solid #27AE60; }"
+        self.radio_aguardando.setStyleSheet(estilo_radio)
+        self.radio_pago.setStyleSheet(estilo_radio)
+        self.radio_isento.setStyleSheet(estilo_radio)
+
+        if c.taxa_status == "Pago":
+            self.radio_pago.setChecked(True)
+        elif c.taxa_status == "Isento":
+            self.radio_isento.setChecked(True)
+        else:
+            self.radio_aguardando.setChecked(True)
+
+        if c.status == "Arquivado":
+            self.radio_aguardando.setEnabled(False)
+            self.radio_pago.setEnabled(False)
+            self.radio_isento.setEnabled(False)
+        else:
+            self.radio_aguardando.toggled.connect(self.recalcular_tudo_e_salvar)
+            self.radio_pago.toggled.connect(self.recalcular_tudo_e_salvar)
+            self.radio_isento.toggled.connect(self.recalcular_tudo_e_salvar)
+
+        layout_pag.addWidget(self.radio_aguardando)
+        layout_pag.addWidget(self.radio_pago)
+        layout_pag.addWidget(self.radio_isento)
+        layout_pag.addStretch()
+        layout.addWidget(box_pag)
+
+        # --- AÇÕES RÁPIDAS (NOVO BOTÃO DE ARQUIVAR) ---
+        lbl_act = QLabel("Ações Rápidas")
+        lbl_act.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-top: 15px; margin-bottom: 5px;")
+        layout.addWidget(lbl_act)
+
+        if c.status == "Concluído (OK)":
+            btn_arq = QPushButton("🗄️ Arquivar / Finalizar Processo")
+            btn_arq.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_arq.setStyleSheet(
+                "background-color: #8E44AD; color: white; font-weight: bold; padding: 12px; border-radius: 6px;")
+            btn_arq.clicked.connect(self.arquivar_processo)
+            layout.addWidget(btn_arq)
+
+        elif c.status == "Arquivado":
+            btn_rea = QPushButton("🔄 Reativar Processo (Desarquivar)")
+            btn_rea.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_rea.setStyleSheet(
+                "background-color: #e74c3c; color: white; font-weight: bold; padding: 12px; border-radius: 6px;")
+            btn_rea.clicked.connect(self.reativar_processo)
+            layout.addWidget(btn_rea)
+
+    # ==========================================
+    # O CÉREBRO DO SISTEMA: RECALCULA STATUS E SALVA
+    # ==========================================
+    def recalcular_tudo_e_salvar(self):
+        if self.casamento_atual.status == "Arquivado":
+            return
+
+        entregues = {chk.text(): chk.isChecked() for chk in self.checks_interativos}
+        faltando = sum(1 for chk in self.checks_interativos if not chk.isChecked())
+
+        if self.radio_pago.isChecked():
+            taxa = "Pago"
+        elif self.radio_isento.isChecked():
+            taxa = "Isento"
+        else:
+            taxa = "Aguardando"
+
+        if faltando == 0 and taxa in ["Pago", "Isento"]:
+            novo_status = "Concluído (OK)"
+        elif faltando > 0:
+            novo_status = "Aguardando Docs"
+        else:
+            novo_status = "Em Andamento"
+
+        db = SessionLocal()
+        atualizar_casamento_interativo(db, self.casamento_atual.id, json.dumps(entregues), faltando, taxa, novo_status)
+        db.close()
+
+        self.badge_status_direita.setText(novo_status)
+        self.badge_status_direita.setStyleSheet(obter_estilo_status(novo_status))
+
+        linha_selecionada = self.tabela.currentRow()
+        self.tabela.blockSignals(True)
+        self.carregar_dados_do_banco()
+        if linha_selecionada >= 0:
+            self.tabela.selectRow(linha_selecionada)
+        self.tabela.blockSignals(False)
+
+        if self.casamento_atual.status != novo_status and novo_status == "Concluído (OK)":
+            self.construir_painel_direito(self.casamento_atual)
+
+    # ==========================================
+    # ARQUIVAMENTO
+    # ==========================================
+    def arquivar_processo(self):
+        resp = QMessageBox.question(self, "Arquivar", "Deseja arquivar este processo?\nEle sairá da lista de Ativos.",
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if resp == QMessageBox.StandardButton.Yes:
+            db = SessionLocal()
+            atualizar_status_casamento(db, self.casamento_atual.id, "Arquivado")
+            db.close()
+            self.carregar_dados_do_banco()
+            self.painel_dir.hide()
+
+    def reativar_processo(self):
+        db = SessionLocal()
+        atualizar_status_casamento(db, self.casamento_atual.id, "Concluído (OK)")
+        db.close()
+        self.combo_filtro.setCurrentText("Exibir: Ativos")
+        self.carregar_dados_do_banco()
+
+    # ==========================================
+    # UTILITÁRIOS VISUAIS
+    # ==========================================
+    def criar_kpi_card(self, titulo, label_valor, subtitulo, cor_destaque="#FFFFFF"):
         card = QFrame()
         card.setProperty("class", "card")
         card.setStyleSheet("background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px;")
@@ -441,12 +661,11 @@ class TelaCasamentos(QWidget):
         layout.setContentsMargins(15, 15, 15, 15)
         lbl_tit = QLabel(titulo)
         lbl_tit.setStyleSheet("color: #8A92A6; font-size: 12px; font-weight: bold; border: none;")
-        lbl_val = QLabel(valor)
-        lbl_val.setStyleSheet(f"color: {cor_destaque}; font-size: 28px; font-weight: bold; border: none;")
+        label_valor.setStyleSheet(f"color: {cor_destaque}; font-size: 28px; font-weight: bold; border: none;")
         lbl_sub = QLabel(subtitulo)
         lbl_sub.setStyleSheet("color: #8A92A6; font-size: 11px; border: none;")
         layout.addWidget(lbl_tit)
-        layout.addWidget(lbl_val)
+        layout.addWidget(label_valor)
         layout.addWidget(lbl_sub)
         return card
 
@@ -454,30 +673,10 @@ class TelaCasamentos(QWidget):
         if layout is not None:
             while layout.count():
                 item = layout.takeAt(0)
-                widget = item.widget()
-                if widget is not None:
-                    widget.deleteLater()
-                else:
+                if item.widget():
+                    item.widget().deleteLater()
+                elif item.layout():
                     self.limpar_layout_interno(item.layout())
-
-    def criar_bloco_pessoa(self, titulo, nome, tel, email):
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        lbl_tit = QLabel(titulo)
-        lbl_tit.setStyleSheet("color: #8A92A6; font-size: 12px;")
-        lbl_nome = QLabel(nome)
-        lbl_nome.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
-        lbl_tel = QLabel(f"📞 {tel}")
-        lbl_tel.setStyleSheet("color: #8A92A6; font-size: 11px;")
-        lbl_email = QLabel(f"✉️ {email}")
-        lbl_email.setStyleSheet("color: #8A92A6; font-size: 11px;")
-        layout.addWidget(lbl_tit)
-        layout.addWidget(lbl_nome)
-        layout.addWidget(lbl_tel)
-        layout.addWidget(lbl_email)
-        return container
 
     def criar_bloco_info(self, titulo, valor):
         container = QWidget()
@@ -490,20 +689,4 @@ class TelaCasamentos(QWidget):
         lbl_val.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
         layout.addWidget(lbl_tit)
         layout.addWidget(lbl_val)
-        return container
-
-    def criar_item_doc(self, nome, status):
-        container = QWidget()
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        lbl_nome = QLabel(f"📄 {nome}")
-        lbl_nome.setStyleSheet("color: #E2E8F0; font-size: 12px; border: none;")
-        lbl_status = QLabel(status)
-        if status == "Entregue":
-            lbl_status.setStyleSheet("color: #2ecc71; font-weight: bold; font-size: 11px; border: none;")
-        else:
-            lbl_status.setStyleSheet("color: #e74c3c; font-weight: bold; font-size: 11px; border: none;")
-        layout.addWidget(lbl_nome)
-        layout.addStretch()
-        layout.addWidget(lbl_status)
         return container

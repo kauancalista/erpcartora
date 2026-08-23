@@ -79,10 +79,10 @@ class TelaDashboard(QWidget):
         layout_topo = QHBoxLayout()
         lbl_titulo = QLabel("Dashboard")
         lbl_titulo.setStyleSheet("font-size: 26px; font-weight: bold; color: white;")
-        lbl_titulo.setFixedWidth(180)  # Trava a largura para equilibrar a balança do layout
+         # lbl_titulo.setFixedWidth(180)  # Trava a largura para equilibrar a balança do layout
 
         self.input_pesquisa = BarraPesquisa(placeholder="🔍 Pesquisa Global: Buscar processos e tarefas...")
-        self.input_pesquisa.setFixedWidth(550)  # Barra largona e chamativa
+        self.input_pesquisa.setMaximumWidth(550)  # Barra largona e chamativa
         self.input_pesquisa.textChanged.connect(self.pesquisar_global)
 
         layout_topo.addWidget(lbl_titulo)

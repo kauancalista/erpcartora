@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from database.modelos import Processo, Documento, Tarefa
+from database.modelos import Processo, Documento, Tarefa, Casamento, Compromisso
 
 # ==========================================
 # C - CREATE (Criar / Inserir)
@@ -75,38 +75,22 @@ def listar_documentos_do_processo(db: Session, processo_id: int):
 
 
 # ==========================================
-# GESTÃO DE TAREFAS (O Dashboard / Kanban)
+# MÓDULO: TAREFAS
 # ==========================================
-def criar_tarefa(db: Session, processo_id: int, descricao: str, responsavel: str = None):
-    nova_tarefa = Tarefa(
-        processo_id=processo_id, # Amarra a tarefa à Maria
+def criar_tarefa(db, descricao, responsavel, data_limite):
+    nova = Tarefa(
         descricao=descricao,
-        responsavel=responsavel
+        responsavel=responsavel,
+        data_criacao=data_limite, # Usando o campo existente para guardar o limite
+        status="Pendente"
     )
-    db.add(nova_tarefa)
+    db.add(nova)
     db.commit()
-    db.refresh(nova_tarefa)
-    return nova_tarefa
+    db.refresh(nova)
+    return nova
 
-def listar_tarefas_do_processo(db: Session, processo_id: int):
-    return db.query(Tarefa).filter(Tarefa.processo_id == processo_id).all()
-
-
-# (Adicione estas funções no final do seu crud.py)
-
-def listar_todas_tarefas(db: Session):
-    # Puxa todas as tarefas do cartório, ordenadas pelas mais antigas primeiro
-    return db.query(Tarefa).order_by(Tarefa.id.asc()).all()
-
-def atualizar_status_tarefa(db: Session, tarefa_id: int, concluida: bool):
-    # Procura a tarefa pelo ID e muda o status dela
-    tarefa = db.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
-    if tarefa:
-        tarefa.status = "Concluída" if concluida else "Pendente"
-        db.commit()
-        db.refresh(tarefa)
-    return tarefa
-
+def listar_todas_tarefas(db):
+    return db.query(Tarefa).order_by(Tarefa.id.desc()).all()
 
 # (Adicione esta função no final do seu crud.py)
 
@@ -125,3 +109,60 @@ def obter_estatisticas_dashboard(db: Session):
         "tarefas_pendentes": tarefas_pendentes,
         "documentos": total_documentos
     }
+
+
+# ==========================================
+# MÓDULO: CASAMENTOS
+# ==========================================
+def criar_casamento(db, protocolo, nome_noivo, nome_noiva, telefone, data_entrada, data_celebracao, horario, docs, pendencias):
+    novo = Casamento(
+        protocolo=protocolo, nome_noivo=nome_noivo, nome_noiva=nome_noiva,
+        telefone_contato=telefone, data_entrada=data_entrada,
+        data_celebracao=data_celebracao, horario_celebracao=horario,
+        docs_entregues=docs, pendencias=pendencias,
+        taxa_status="Aguardando", status="Aguardando Docs"
+    )
+    db.add(novo)
+    db.commit()
+    db.refresh(novo)
+    return novo
+
+def listar_todos_casamentos(db):
+    return db.query(Casamento).order_by(Casamento.id.desc()).all()
+
+def atualizar_casamento_interativo(db, casamento_id, docs_json, pendencias, taxa_status, status):
+    """Essa função salva qualquer clique que você der nas checkboxes da tela direita!"""
+    c = db.query(Casamento).filter(Casamento.id == casamento_id).first()
+    if c:
+        c.docs_entregues = docs_json
+        c.pendencias = pendencias
+        c.taxa_status = taxa_status
+        c.status = status
+        db.commit()
+        db.refresh(c)
+    return c
+
+def atualizar_status_casamento(db, casamento_id, novo_status):
+    casamento = db.query(Casamento).filter(Casamento.id == casamento_id).first()
+    if casamento:
+        casamento.status = novo_status
+        db.commit()
+        db.refresh(casamento)
+    return casamento
+
+# ==========================================
+# MÓDULO: COMPROMISSOS DA AGENDA
+# ==========================================
+def criar_compromisso(db, titulo, data, hora, tipo, lembrete, link):
+    novo = Compromisso(
+        titulo=titulo, data=data, hora=hora,
+        tipo=tipo, lembrete=lembrete, link_reuniao=link,
+        status="Confirmado"
+    )
+    db.add(novo)
+    db.commit()
+    db.refresh(novo)
+    return novo
+
+def listar_compromissos(db):
+    return db.query(Compromisso).all()

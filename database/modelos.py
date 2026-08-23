@@ -58,6 +58,46 @@ class Tarefa(Base):
     processo = relationship("Processo", back_populates="tarefas")
 
 
+
+
+# ==========================================
+# TABELA 4: CASAMENTOS
+# ==========================================
+class Casamento(Base):
+    __tablename__ = "casamentos"
+    id = Column(Integer, primary_key=True, index=True)
+    protocolo = Column(String, unique=True, index=True, nullable=False)
+
+    # Dados dos Noivos
+    nome_noivo = Column(String, nullable=False)
+    nome_noiva = Column(String, nullable=False)
+    telefone_contato = Column(String, nullable=True)
+
+    # Informações do Processo
+    data_entrada = Column(String, nullable=False)
+    data_celebracao = Column(String, nullable=False)
+    horario_celebracao = Column(String, nullable=True)
+
+    # Controle e Status (A Mágica Interativa)
+    docs_entregues = Column(String, nullable=True)  # Guarda o JSON com as checkboxes
+    taxa_status = Column(String, default="Aguardando")  # Aguardando, Pago ou Isento
+    status = Column(String, default="Aguardando Docs")
+    pendencias = Column(Integer, default=0)
+
+# ==========================================
+# TABELA 5: COMPROMISSOS (Agenda)
+# ==========================================
+class Compromisso(Base):
+    __tablename__ = "compromissos"
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(String, nullable=False)
+    data = Column(String, nullable=False) # Formato DD/MM/YYYY
+    hora = Column(String, nullable=False) # Formato HH:MM
+    tipo = Column(String, default="Reunião")
+    lembrete = Column(String, nullable=True)
+    link_reuniao = Column(String, nullable=True)
+    status = Column(String, default="Confirmado")
+
 # ==========================================
 # ATUALIZA O BANCO DE DADOS
 # ==========================================
