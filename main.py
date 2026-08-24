@@ -23,6 +23,15 @@ def iniciar_sistema():
 
     sys.exit(app.exec())
 
-
 if __name__ == "__main__":
+    app = QApplication(sys.argv)
+
+     # 1. Força o motor visual moderno (tira o visual de Windows 98)
+    app.setStyle("Fusion")
+
+    # 2. Força o fundo escuro globalmente para a janela principal não ficar branca!
+    app.setStyleSheet("""
+        QMainWindow { background-color: #05070A; }
+        QWidget#centralWidget { background-color: #05070A; }
+        """)
     iniciar_sistema()
