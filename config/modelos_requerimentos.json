@@ -13,8 +13,7 @@
             [
                 {"label": "CPF", "tag": "cpf_requerente", "mask": "cpf", "flex": 2},
                 {"label": "Nº RG", "tag": "rg_requerente", "flex": 2},
-                {"label": "Órgão (Ex: SDS)", "tag": "org_rg", "flex": 1},
-                {"label": "UF (Ex: PE)", "tag": "uf_rg", "flex": 1}
+                {"label": "Órgão (Ex: SDS/PE)", "tag": "org_rg", "flex": 1}
             ],
             [
                 {"label": "Nome do Registrado", "tag": "nome_do_registrado", "flex": 1}
@@ -46,13 +45,12 @@
                 {"label": "Estado Civil", "tag": "estado_civil", "mask": "estado_civil", "flex": 2}
             ],
             [
-                {"label": "Naturalidade", "tag": "naturalidade", "flex": 1},
+                {"label": "Naturalidade", "tag": "naturalidade", "flex": 2},
                 {"label": "CPF do Declarante", "tag": "cpf", "mask": "cpf", "flex": 1}
             ],
             [
                 {"label": "Nº RG", "tag": "n_rg", "flex": 2},
-                {"label": "Órgão Emissor", "tag": "org_rg", "flex": 1},
-                {"label": "UF", "tag": "uf_rg", "flex": 1}
+                {"label": "Órgão Emissor", "tag": "org_rg", "flex": 1}
             ],
             [
                 {"label": "Pai do Declarante", "tag": "pai_declarante", "flex": 1},
@@ -73,7 +71,35 @@
             ],
             [
                 {"label": "Nome Após Reconhecimento", "tag": "nome_registrado_apos_reconhecimento", "flex": 1}
+            ],
+            [
+                {"label": "Texto da Assinatura 1 (Ex: Assinatura do registrado)", "tag": "assinatura_1", "flex": 1},
+                {"label": "Texto da Assinatura 2 (Apenas para CRC)", "tag": "assinatura_2", "flex": 1}
             ]
         ]
+    },
+    "Suprimento": {
+        "modalidades": ["Pago", "Hipossuficiência"],
+        "arquivo_docx": "modelo_suprimento.docx",
+        "descricao": "Procedimento para suprimento de registro civil.",
+        "linhas": [[{"label": "Nome do Requerente", "tag": "nome_cliente", "flex": 1}]]
+    },
+    "Inclusão de sobrenome": {
+        "modalidades": ["Pago"],
+        "arquivo_docx": "modelo_inclusao.docx",
+        "descricao": "Procedimento para inclusão de sobrenome.",
+        "linhas": [[{"label": "Nome Atual", "tag": "nome_atual", "flex": 1}]]
+    },
+    "Remoção de sobrenome": {
+        "modalidades": ["Pago"],
+        "arquivo_docx": "modelo_remocao.docx",
+        "descricao": "Procedimento para remoção de sobrenome.",
+        "linhas": [[{"label": "Nome Atual", "tag": "nome_atual", "flex": 1}]]
+    },
+    "Alteração de prenome": {
+        "modalidades": ["Pago"],
+        "arquivo_docx": "modelo_alteracao.docx",
+        "descricao": "Procedimento para alteração de prenome.",
+        "linhas": [[{"label": "Nome Atual", "tag": "nome_atual", "flex": 1}]]
     }
 }

@@ -9,6 +9,9 @@ from ui.views.view_tarefas import TelaTarefas
 from ui.views.view_requerimentos import TelaRequerimentos
 from ui.views.view_casamentos import TelaCasamentos
 from ui.views.view_agenda import TelaAgenda
+from ui.views.view_configuracoes import TelaConfiguracoes
+from ui.views.view_relatorios import TelaRelatorios
+from ui.views.view_scanner import TelaScanner
 from PyQt6.QtCore import QTimer
 from ui.componentes import notificar
 
@@ -52,6 +55,7 @@ class MainWindow(QMainWindow):
         self.btn_agenda = self.criar_botao_menu("📅 Agenda")
         self.btn_config = self.criar_botao_menu("⚙️ Configurações")
         self.btn_casamentos = self.criar_botao_menu("💍 Casamentos")
+        self.btn_scanner = self.criar_botao_menu("🖨️ Scanner e OCR")
 
         # Ligando os cliques
         self.btn_dashboard.clicked.connect(lambda: self.mudar_tela(0))
@@ -63,6 +67,7 @@ class MainWindow(QMainWindow):
         self.btn_agenda.clicked.connect(lambda: self.mudar_tela(5))
         self.btn_config.clicked.connect(lambda: self.mudar_tela(6))
         self.btn_casamentos.clicked.connect(lambda: self.mudar_tela(7))
+        self.btn_scanner.clicked.connect(lambda: self.mudar_tela(8))
 
         # Adicionando no menu lateral
         layout_sidebar.addWidget(self.btn_dashboard)
@@ -73,6 +78,7 @@ class MainWindow(QMainWindow):
         layout_sidebar.addWidget(self.btn_agenda)
         layout_sidebar.addWidget(self.btn_config)
         layout_sidebar.addWidget(self.btn_casamentos)
+        layout_sidebar.addWidget(self.btn_scanner)
         layout_sidebar.addStretch()
         # ==========================================
         # 2. ÁREA CENTRAL (O Empilhador de Telas)
@@ -84,18 +90,24 @@ class MainWindow(QMainWindow):
         tela_proc = TelaProcessos()
         tela_tar = TelaTarefas()
         tela_req = TelaRequerimentos()
-        tela_cas = TelaCasamentos()
+        tela_relat = TelaRelatorios()
         tela_agenda = TelaAgenda()
+        tela_config = TelaConfiguracoes()
+        tela_cas = TelaCasamentos()
+        tela_scan = TelaScanner()
+
+
 
         # Adicionando na pilha exata (0 a 3)
-        self.stack.addWidget(tela_dash)  # 0
-        self.stack.addWidget(tela_proc)  # 1
-        self.stack.addWidget(tela_tar)  # 2
-        self.stack.addWidget(tela_req)  # 3
-        self.stack.addWidget(QWidget())  # 4 - Relatórios (Placeholder)
-        self.stack.addWidget(tela_agenda)  # 5 - Agenda (Placeholder)
-        self.stack.addWidget(QWidget())  # 6 - Config (Placeholder)
-        self.stack.addWidget(tela_cas)  # 7 - Config (Placeholder)
+        self.stack.addWidget(tela_dash)  # 0 - dashboard
+        self.stack.addWidget(tela_proc)  # 1 - processos
+        self.stack.addWidget(tela_tar)  # 2 - tarefas
+        self.stack.addWidget(tela_req)  # 3 - requerimentos
+        self.stack.addWidget(tela_relat)  # 4 - Relatórios
+        self.stack.addWidget(tela_agenda)  # 5 - Agenda
+        self.stack.addWidget(tela_config)  # 6 - Configurações
+        self.stack.addWidget(tela_cas)  # 7 - Casamentos
+        self.stack.addWidget(tela_scan) # 8 - scanner
 
         layout_principal.addWidget(sidebar)
         layout_principal.addWidget(self.stack)
@@ -124,6 +136,9 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(indice)
 
         # Atualiza a cor azul de qual aba está selecionada
-        botoes = [self.btn_dashboard, self.btn_processos, self.btn_tarefas, self.btn_requerimentos]
+        botoes = [self.btn_dashboard, self.btn_processos, self.btn_tarefas,
+                  self.btn_requerimentos, self.btn_relatorios, self.btn_agenda,
+                  self.btn_config, self.btn_casamentos, self.btn_scanner]
+
         for i, btn in enumerate(botoes):
             btn.setChecked(i == indice)

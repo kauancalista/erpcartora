@@ -1,10 +1,15 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                             QComboBox, QPushButton, QMessageBox, QFrame, QFileDialog)
-from PyQt6.QtCore import Qt
 import os
+import shutil
+import json
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                             QComboBox, QPushButton, QMessageBox, QFrame,
+                             QFileDialog, QScrollArea, QWidget)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QCursor
+
 from database.conexao import SessionLocal
-from database.crud import obter_processo_por_id, atualizar_status_processo, listar_documentos_do_processo, \
-    adicionar_documento
+from database.crud import (obter_processo_por_id, atualizar_status_processo,
+                           listar_documentos_do_processo, adicionar_documento)
 
 
 class DialogDetalhesProcesso(QDialog):
@@ -12,10 +17,9 @@ class DialogDetalhesProcesso(QDialog):
         super().__init__()
         self.processo_id = processo_id
         self.setWindowTitle(f"Ficha do Processo #{processo_id}")
-        self.resize(650, 600)
+        self.resize(700, 650)
+        self.setStyleSheet("background-color: #0B0E14; color: white;")
 
-
-        # Puxa os dados do banco
         self.carregar_dados_do_banco()
         self.montar_layout()
 
@@ -26,37 +30,36 @@ class DialogDetalhesProcesso(QDialog):
         db.close()
 
     def montar_layout(self):
-        # Se já existir um layout (quando atualizamos a tela), nós limpamos
         if self.layout():
             QWidget().setLayout(self.layout())
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(30, 30, 30, 30)
 
         # --- CABEÇALHO ---
         lbl_nome = QLabel(self.processo.nome_cliente)
-        lbl_nome.setProperty("class", "titulo")
+        lbl_nome.setStyleSheet("font-size: 22px; font-weight: bold;")
         lbl_servico = QLabel(f"Proc. 2026.08.{self.processo.id:04d} | Serviço: {self.processo.tipo_servico}")
-        lbl_servico.setProperty("class", "subtitulo")
-
+        lbl_servico.setStyleSheet("font-size: 13px; color: #8A92A6; margin-bottom: 15px;")
         layout.addWidget(lbl_nome)
         layout.addWidget(lbl_servico)
-        layout.addSpacing(15)
 
-        # --- SEÇÃO DE ARQUIVOS ---
+        # --- SEÇÃO DE ARQUIVOS (O CORE DMS) ---
         layout_arq_topo = QHBoxLayout()
-        lbl_arq_titulo = QLabel("Arquivos do processo")
+        lbl_arq_titulo = QLabel("Arquivos do Processo")
         lbl_arq_titulo.setStyleSheet("font-weight: bold; font-size: 16px;")
 
-        # O NOVO BOTÃO DE ANEXAR!
-        btn_anexar = QPushButton("+ Anexar PDF")
-        btn_anexar.setObjectName("btn-anexar")
+        btn_anexar = QPushButton("+ Anexar Manualmente")
+        btn_anexar.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_anexar.setStyleSheet(
+            "background-color: #2962FF; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
         btn_anexar.clicked.connect(self.abrir_explorador_arquivos)
 
-        # O NOVO BOTÃO DO SCANNER! 👇
-        btn_scanner = QPushButton("🖨️ Digitalizar (Scanner)")
-        btn_scanner.setObjectName("btn-scanner")
-        btn_scanner.clicked.connect(self.acionar_scanner)
+        btn_scanner = QPushButton("🖨️ Ir para o Scanner OCR")
+        btn_scanner.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_scanner.setStyleSheet(
+            "background-color: #8E44AD; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
+        btn_scanner.clicked.connect(self.avisar_scanner)
 
         layout_arq_topo.addWidget(lbl_arq_titulo)
         layout_arq_topo.addStretch()
@@ -64,79 +67,119 @@ class DialogDetalhesProcesso(QDialog):
         layout_arq_topo.addWidget(btn_scanner)
         layout.addLayout(layout_arq_topo)
 
-        # --- CARDS DE DOCUMENTOS ---
-        layout_cards = QHBoxLayout()
-        tem_documento = len(self.documentos) > 0
-        nome_doc = self.documentos[-1].nome_arquivo if tem_documento else "Nenhum arquivo"
+        # --- LISTA DE DOCUMENTOS COM SCROLL ---
+        scroll_docs = QScrollArea()
+        scroll_docs.setWidgetResizable(True)
+        scroll_docs.setStyleSheet(
+            "QScrollArea { border: 1px solid #1E2532; border-radius: 8px; background-color: #11151F; }")
 
-        card_principal = QFrame()
-        card_principal.setProperty("class", "card-verde" if tem_documento else "card-vermelho")
-        card_principal.setFixedSize(280, 150)
-        layout_card_1 = QVBoxLayout(card_principal)
+        container_docs = QWidget()
+        container_docs.setStyleSheet("background-color: transparent;")
+        lay_docs = QVBoxLayout(container_docs)
+        lay_docs.setSpacing(10)
+        lay_docs.setContentsMargins(15, 15, 15, 15)
 
-        lbl_titulo_c1 = QLabel("Documento principal")
-        lbl_titulo_c1.setStyleSheet("font-weight: bold;")
-        lbl_icone_c1 = QLabel("📄 PDF" if tem_documento else "❌")
-        lbl_icone_c1.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_icone_c1.setStyleSheet("font-size: 24px; color: #e74c3c;" if not tem_documento else "font-size: 24px;")
-        lbl_nome_c1 = QLabel(nome_doc if tem_documento else "Arquivo não encontrado")
-        lbl_nome_c1.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if not self.documentos:
+            lbl_vazio = QLabel("Nenhum arquivo anexado ainda.\nUtilize o Scanner OCR ou anexe manualmente.")
+            lbl_vazio.setStyleSheet("color: #8A92A6; font-style: italic;")
+            lbl_vazio.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lay_docs.addWidget(lbl_vazio)
+        else:
+            for doc in self.documentos:
+                card_doc = QFrame()
+                card_doc.setStyleSheet(
+                    "background-color: #1A2133; border: 1px solid #2C364C; border-radius: 8px; padding: 10px;")
+                lay_card = QHBoxLayout(card_doc)
 
-        layout_card_1.addWidget(lbl_titulo_c1)
-        layout_card_1.addWidget(lbl_icone_c1)
-        layout_card_1.addWidget(lbl_nome_c1)
+                lbl_icone = QLabel("📄")
+                lbl_icone.setStyleSheet("font-size: 24px; border: none;")
 
-        layout_cards.addWidget(card_principal)
-        layout_cards.addStretch()
-        layout.addLayout(layout_cards)
+                info_layout = QVBoxLayout()
+                lbl_nome_doc = QLabel(doc.nome_arquivo)
+                lbl_nome_doc.setStyleSheet("font-weight: bold; color: white; border: none; font-size: 14px;")
+                lbl_tipo_doc = QLabel(doc.tipo_documento)
+                lbl_tipo_doc.setStyleSheet("font-size: 12px; color: #8A92A6; border: none;")
+                info_layout.addWidget(lbl_nome_doc)
+                info_layout.addWidget(lbl_tipo_doc)
+
+                btn_abrir = QPushButton("Abrir Arquivo")
+                btn_abrir.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                btn_abrir.setStyleSheet(
+                    "background-color: #27AE60; color: white; padding: 8px 15px; border-radius: 6px; font-weight: bold;")
+                btn_abrir.clicked.connect(lambda checked, c=doc.caminho_arquivo: self.abrir_doc(c))
+
+                lay_card.addWidget(lbl_icone)
+                lay_card.addLayout(info_layout, 1)
+                lay_card.addWidget(btn_abrir)
+
+                lay_docs.addWidget(card_doc)
+
+        lay_docs.addStretch()
+        scroll_docs.setWidget(container_docs)
+        layout.addWidget(scroll_docs)
         layout.addSpacing(20)
 
-        # --- STATUS ---
+        # --- STATUS DO PROCESSO ---
         lbl_status_titulo = QLabel("Status do Processo:")
         lbl_status_titulo.setStyleSheet("font-weight: bold; color: #8a8d98;")
         layout.addWidget(lbl_status_titulo)
 
         layout_status = QHBoxLayout()
         self.combo_status = QComboBox()
-        self.combo_status.addItems(["Aguardando Documento", "Em Análise", "Pendente com o Cliente", "🟢 PRONTO"])
+        self.combo_status.addItems(["Aguardando Documento", "Em Análise", "Revisar", "Pendente", "Completo"])
         self.combo_status.setCurrentText(self.processo.status)
+        self.combo_status.setStyleSheet(
+            "background-color: #0B0E14; border: 1px solid #1E2532; border-radius: 6px; padding: 10px; color: white;")
 
         btn_salvar_status = QPushButton("Salvar Alterações")
+        btn_salvar_status.setStyleSheet(
+            "background-color: #2962FF; color: white; padding: 10px; border-radius: 6px; font-weight: bold;")
         btn_salvar_status.clicked.connect(self.salvar_status)
 
         layout_status.addWidget(self.combo_status)
         layout_status.addWidget(btn_salvar_status)
         layout.addLayout(layout_status)
-        layout.addStretch()
 
-    # --- A MÁGICA DE LER O ARQUIVO DO COMPUTADOR ---
+    # --- A MÁGICA: COPIA O ARQUIVO PRA PASTA DO PROCESSO E SALVA NO BANCO ---
     def abrir_explorador_arquivos(self):
-        # Abre a janela do Windows para escolher um arquivo PDF
         caminho_arquivo, _ = QFileDialog.getOpenFileName(
-            self,
-            "Selecione o Documento PDF",
-            "",
-            "Arquivos PDF (*.pdf);;Todos os Arquivos (*)"
+            self, "Selecione o Documento", "", "PDF e Imagens (*.pdf *.jpg *.jpeg *.png);;Todos (*)"
         )
-
         if caminho_arquivo:
-            # Extrai apenas o nome do arquivo (ex: "certidao.pdf")
-            nome_arquivo = os.path.basename(caminho_arquivo)
+            nome_arquivo_original = os.path.basename(caminho_arquivo)
 
-            # Salva no Banco de Dados
+            # 1. Puxa a Configuração da Pasta
+            pasta_base = os.path.join(os.getcwd(), "Arquivos_Cartorio")
+            try:
+                caminho_config = os.path.join(os.getcwd(), "config", "app_config.json")
+                if os.path.exists(caminho_config):
+                    with open(caminho_config, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                        if cfg.get("pasta_processos"): pasta_base = cfg["pasta_processos"]
+            except:
+                pass
+
+            # 2. Reconstrói o Caminho da Pasta deste Cliente
+            nome_pasta = f"Proc_{self.processo.id:03d}_{self.processo.nome_cliente.replace(' ', '_').upper()}"
+            pasta_destino = os.path.join(pasta_base, nome_pasta)
+            os.makedirs(pasta_destino, exist_ok=True)  # Garante que a pasta existe
+
+            # 3. Faz a Cópia do Arquivo
+            caminho_final = os.path.join(pasta_destino, nome_arquivo_original)
+            shutil.copy2(caminho_arquivo, caminho_final)
+
+            # 4. Grava no Banco
             db = SessionLocal()
             adicionar_documento(
                 db=db,
                 processo_id=self.processo_id,
-                nome_arquivo=nome_arquivo,
-                tipo_documento="PDF Principal",
-                caminho_arquivo=caminho_arquivo
+                nome_arquivo=nome_arquivo_original,
+                tipo_documento="Anexo Manual",
+                caminho_arquivo=caminho_final
             )
             db.close()
 
-            QMessageBox.information(self, "Sucesso", f"Documento '{nome_arquivo}' anexado com sucesso!")
-
-            # Recarrega a tela para o card vermelho virar verde imediatamente!
+            QMessageBox.information(self, "Sucesso", "Documento anexado e copiado para a pasta do processo!")
             self.carregar_dados_do_banco()
             self.montar_layout()
 
@@ -147,30 +190,13 @@ class DialogDetalhesProcesso(QDialog):
         db.close()
         self.accept()
 
+    def abrir_doc(self, caminho):
+        if os.path.exists(caminho):
+            os.startfile(caminho)
+        else:
+            QMessageBox.warning(self, "Erro",
+                                "Arquivo físico não encontrado na pasta. Ele pode ter sido movido ou excluído.")
 
-    def acionar_scanner(self):
-        try:
-            import win32com.client
-            import os
-
-            QMessageBox.information(self, "Scanner",
-                                    "Iniciando comunicação com o Scanner. Selecione seu aparelho na próxima janela.")
-
-            # Abre a janela nativa do Windows para escanear
-            wia = win32com.client.Dispatch("WIA.CommonDialog")
-            imagem = wia.ShowAcquireImage()
-
-            if imagem:
-                caminho_temp = os.path.join(os.path.expanduser("~"), "digitalizacao_cartorio.jpg")
-                # Remove arquivo antigo se existir
-                if os.path.exists(caminho_temp):
-                    os.remove(caminho_temp)
-
-                imagem.SaveFile(caminho_temp)
-
-                # AQUI VOCÊ PODE CONVERTER O JPG PARA PDF USANDO A BIBLIOTECA PIL (Pillow)
-                QMessageBox.information(self, "Sucesso", f"Documento escaneado e salvo em: {caminho_temp}")
-
-        except Exception as e:
-            QMessageBox.critical(self, "Erro no Scanner",
-                                 f"Não foi possível conectar ao scanner.\n\nDetalhes: {str(e)}")
+    def avisar_scanner(self):
+        QMessageBox.information(self, "Dica",
+                                "Para usar o OCR com Inteligência Artificial, feche esta janela e acesse a aba 'Scanner e OCR' no menu lateral esquerdo.")

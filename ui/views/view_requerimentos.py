@@ -379,6 +379,13 @@ class TelaRequerimentos(QWidget):
             self.btn_proximo.setText("Próximo")
             self.btn_proximo.setStyleSheet("background-color: #2962FF;")
 
+    # ==========================================
+    # CÉREBRO DE GERAÇÃO (DIRETO PARA O WORD)
+    # ==========================================
+
+    # ==========================================
+    # CÉREBRO DE GERAÇÃO (DIRETO PARA O WORD)
+    # ==========================================
     def gerar_documento(self):
         nome_requerimento = self.combo_modelos.currentText()
         config = self.config_modelos.get(nome_requerimento)
@@ -394,39 +401,40 @@ class TelaRequerimentos(QWidget):
         hoje = datetime.now()
         dados_preenchidos["data"] = f"{hoje.day:02d} de {meses[hoje.month - 1]} de {hoje.year}"
 
+        # INJEÇÃO MÁGICA DE ASSINATURAS CORRIGIDA
         if nome_requerimento == "Reconhecimento paternidade voluntário":
             linha_tracos = "__________________________________________________"
 
-            dados_preenchidos["linha"] = ""
-            dados_preenchidos["assinatura_adicional"] = ""
+            # Limpa todas as tags de assinatura por padrão para não vazar "{}" no Word
             dados_preenchidos["linha1"] = ""
             dados_preenchidos["assinatura_adicional1"] = ""
             dados_preenchidos["linha2"] = ""
             dados_preenchidos["assinatura_adicional2"] = ""
 
-            nome_filho = dados_preenchidos.get("nome_registrado", "Registrado")
+            # Pega EXATAMENTE o que o atendente digitou nas caixas (sem adicionar "Anuente:")
+            sig1 = dados_preenchidos.get("assinatura_1", "").strip()
+            sig2 = dados_preenchidos.get("assinatura_2", "").strip()
 
-            if modalidade == "Reg. assina":
-                dados_preenchidos["linha"] = linha_tracos
-                dados_preenchidos["assinatura_adicional"] = f"Assinatura do Registrado: {nome_filho}"
+            # Se for "Reg. assina", "Reg. maior de 18" ou "CRC", e tiver texto, gera a PRIMEIRA linha
+            if modalidade in ["Reg. assina", "Reg. maior de 18", "CRC"]:
+                if sig1:
+                    dados_preenchidos["linha1"] = linha_tracos
+                    dados_preenchidos["assinatura_adicional1"] = sig1
 
-            elif modalidade == "Crc":
-                dados_preenchidos["linha1"] = linha_tracos
-                dados_preenchidos["assinatura_adicional1"] = "Assinatura do Anuente 1"
-                dados_preenchidos["linha2"] = linha_tracos
-                dados_preenchidos["assinatura_adicional2"] = "Assinatura do Anuente 2"
+            # A SEGUNDA linha extra só aparece se for CRC e houver texto
+            if modalidade == "CRC":
+                if sig2:
+                    dados_preenchidos["linha2"] = linha_tracos
+                    dados_preenchidos["assinatura_adicional2"] = sig2
 
         try:
             caminho_docx = gerar_docx_requerimento(config["arquivo_docx"], dados_preenchidos)
             QMessageBox.information(self, "Sucesso", "Requerimento gerado com sucesso!")
-
-            # Abre o Word final direto na tela do usuário
             os.startfile(os.path.abspath(caminho_docx))
-
             self.cancelar_fluxo()
 
         except FileNotFoundError:
             QMessageBox.warning(self, "Aviso",
-                                f"O arquivo '{config['arquivo_docx']}' não foi encontrado na pasta 'assets/templates'.")
+                                f"O arquivo '{config.get('arquivo_docx')}' não foi encontrado na pasta 'assets/templates'.")
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Erro: {str(e)}")
