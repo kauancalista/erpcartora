@@ -1,20 +1,18 @@
 import os
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QTableWidget, QTableWidgetItem, QHeaderView, QLabel,
-                             QDialog, QComboBox, QMessageBox)
-from PyQt6.QtCore import Qt, QSize, QTimer
-from PyQt6.QtGui import QIcon, QColor
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+                             QPushButton, QLineEdit, QFrame, QScrollArea,
+                             QComboBox, QDialog, QMessageBox)
+from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QCursor, QIcon
+
 from database.conexao import SessionLocal
 from database.crud import listar_todos_processos, atualizar_status_processo, listar_documentos_do_processo
 from ui.dialogs.form_novo_processo import DialogNovoProcesso
 from ui.dialogs.form_detalhes_processo import DialogDetalhesProcesso
 
-# IMPORTANDO OS NOSSOS COMPONENTES GLOBAIS!
-from ui.componentes import BarraPesquisa, ComboStatus, wrap_transparente
-
 
 # =========================================================
-# TELA FLUTUANTE DE MIGRAÇÃO
+# TELA FLUTUANTE DE MIGRAÇÃO (Lógica Original Mantida)
 # =========================================================
 class DialogMigracao(QDialog):
     def __init__(self, parent=None):
@@ -34,15 +32,21 @@ class DialogMigracao(QDialog):
         layout.addWidget(lbl)
 
         btn_entregue = QPushButton("✅ Entregar ao Cliente")
-        btn_entregue.setStyleSheet("background-color: #27AE60; padding: 12px; font-size: 13px;")
+        btn_entregue.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_entregue.setStyleSheet(
+            "background-color: #27AE60; padding: 12px; font-size: 13px; border-radius: 6px; font-weight: bold;")
         btn_entregue.clicked.connect(lambda: self.escolher("Entregue"))
 
         btn_cras = QPushButton("🏢 Enviar para o CRAS")
-        btn_cras.setStyleSheet("background-color: #8E44AD; padding: 12px; font-size: 13px;")
+        btn_cras.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_cras.setStyleSheet(
+            "background-color: #8E44AD; padding: 12px; font-size: 13px; border-radius: 6px; font-weight: bold;")
         btn_cras.clicked.connect(lambda: self.escolher("CRAS"))
 
         btn_arquivado = QPushButton("🗄️ Arquivar no Cartório")
-        btn_arquivado.setStyleSheet("background-color: #2C364C; padding: 12px; font-size: 13px;")
+        btn_arquivado.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_arquivado.setStyleSheet(
+            "background-color: #2C364C; padding: 12px; font-size: 13px; border-radius: 6px; font-weight: bold;")
         btn_arquivado.clicked.connect(lambda: self.escolher("Arquivado"))
 
         layout.addWidget(btn_entregue)
@@ -55,82 +59,95 @@ class DialogMigracao(QDialog):
 
 
 # =========================================================
-# A TELA PRINCIPAL DE PROCESSOS
+# A TELA PRINCIPAL (Layout em Blocos + Lógica Avançada)
 # =========================================================
 class TelaProcessos(QWidget):
     def __init__(self):
         super().__init__()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 30, 30, 30)
+        self.todos_processos = []
+        self.carregando = False
+
+        layout_principal = QVBoxLayout(self)
+        layout_principal.setContentsMargins(40, 30, 40, 30)
+        layout_principal.setSpacing(20)
 
         # --- CABEÇALHO ---
         layout_topo = QHBoxLayout()
-        titulo = QLabel("Documentos / Protocolos")
-        titulo.setStyleSheet("font-size: 24px; font-weight: bold;")
+        box_titulo = QVBoxLayout()
+        lbl_titulo = QLabel("📁 Central de Processos e Documentos")
+        lbl_titulo.setStyleSheet("font-size: 24px; font-weight: bold; color: white;")
+        lbl_sub = QLabel("Gerencie os processos, visualize anexos rápidos e altere o status.")
+        lbl_sub.setStyleSheet("font-size: 13px; color: #8A92A6;")
+        box_titulo.addWidget(lbl_titulo)
+        box_titulo.addWidget(lbl_sub)
 
-        # APLICANDO A BARRA DE PESQUISA GLOBAL
-        self.input_pesquisa = BarraPesquisa()
-        self.input_pesquisa.textChanged.connect(self.filtrar_tabela)
+        self.btn_novo = QPushButton("+ Novo Processo")
+        self.btn_novo.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_novo.setStyleSheet(
+            "background-color: #27AE60; color: white; font-weight: bold; padding: 12px 20px; border-radius: 6px; font-size: 14px;")
+        self.btn_novo.clicked.connect(self.abrir_formulario)
 
-        layout_topo.addWidget(titulo)
+        layout_topo.addLayout(box_titulo)
         layout_topo.addStretch()
-        layout_topo.addWidget(self.input_pesquisa)
-        layout.addLayout(layout_topo)
-        layout.addSpacing(15)
+        layout_topo.addWidget(self.btn_novo)
+        layout_principal.addLayout(layout_topo)
 
-        # --- BOTÕES E FILTROS ---
-        layout_botoes = QHBoxLayout()
-        self.btn_carregar = QPushButton("🔄 Atualizar")
-        self.btn_carregar.clicked.connect(self.carregar_dados)
+        # --- BARRA DE PESQUISA E FILTROS ---
+        painel_filtros = QFrame()
+        painel_filtros.setStyleSheet("background-color: #11151F; border-radius: 8px; border: 1px solid #1E2532;")
+        layout_filtros = QHBoxLayout(painel_filtros)
+        layout_filtros.setContentsMargins(15, 10, 15, 10)
+        layout_filtros.setSpacing(15)
+
+        self.btn_atualizar = QPushButton("🔄 Atualizar")
+        self.btn_atualizar.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_atualizar.setStyleSheet(
+            "background-color: #1A2133; color: white; padding: 8px 15px; border-radius: 6px;")
+        self.btn_atualizar.clicked.connect(self.carregar_dados)
 
         self.combo_filtro = QComboBox()
         self.combo_filtro.addItems(
             ["Exibir: Ativos", "Exibir: Todos", "Exibir: Entregues", "Exibir: CRAS", "Exibir: Arquivados"])
-        self.combo_filtro.setFixedWidth(180)
+        self.combo_filtro.setStyleSheet(
+            "background-color: #0B0E14; border: 1px solid #2C364C; border-radius: 6px; color: white; padding: 8px;")
         self.combo_filtro.currentTextChanged.connect(self.filtrar_tabela)
 
-        self.btn_novo = QPushButton("+ Novo Documento")
-        self.btn_novo.setObjectName("btn-novo")
-        self.btn_novo.clicked.connect(self.abrir_formulario)
+        lbl_icone_busca = QLabel("🔍")
+        lbl_icone_busca.setStyleSheet("border: none; font-size: 16px;")
 
-        layout_botoes.addWidget(self.btn_carregar)
-        layout_botoes.addWidget(self.combo_filtro)
-        layout_botoes.addStretch()
-        layout_botoes.addWidget(self.btn_novo)
-        layout.addLayout(layout_botoes)
+        self.input_pesquisa = QLineEdit()
+        self.input_pesquisa.setPlaceholderText("Pesquisar por nome ou protocolo...")
+        self.input_pesquisa.setStyleSheet("background-color: transparent; border: none; color: white; font-size: 14px;")
+        self.input_pesquisa.textChanged.connect(self.filtrar_tabela)
 
-        # === TABELA RESPONSIVA ===
-        self.tabela = QTableWidget()
-        self.tabela.setColumnCount(4)
-        self.tabela.setHorizontalHeaderLabels(["Nome / Processo", "Arquivos", "Situação", "Ações"])
+        layout_filtros.addWidget(self.btn_atualizar)
+        layout_filtros.addWidget(self.combo_filtro)
+        layout_filtros.addSpacing(20)
+        layout_filtros.addWidget(lbl_icone_busca)
+        layout_filtros.addWidget(self.input_pesquisa)
+        layout_principal.addWidget(painel_filtros)
 
-        self.tabela.setAlternatingRowColors(True)
-        self.tabela.verticalHeader().setDefaultSectionSize(75)
-        self.tabela.verticalHeader().setVisible(False)
-        self.tabela.setShowGrid(False)
-        self.tabela.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.tabela.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.tabela.setStyleSheet("""
-            QTableWidget { background-color: #0B0E14; alternate-background-color: #11151F; border: 1px solid #1E2532; border-radius: 8px; outline: none; }
-            QTableWidget::item { border: none; padding-left: 5px; }
-            QTableWidget::item:selected { background-color: #1A2133; color: white; }
-            QHeaderView::section { background-color: transparent; color: #8A92A6; font-weight: bold; font-size: 12px; border: none; border-bottom: 1px solid #1E2532; padding: 12px 5px; text-align: left; }
-        """)
+        # --- ÁREA DE SCROLL PARA OS BLOCOS (CARDS) ---
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
 
-        header = self.tabela.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.tabela.setColumnWidth(0, 320)
-        self.tabela.setColumnWidth(1, 120)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.container_blocos = QWidget()
+        self.container_blocos.setStyleSheet("background-color: transparent;")
+        self.layout_blocos = QVBoxLayout(self.container_blocos)
+        self.layout_blocos.setSpacing(15)
+        self.layout_blocos.setContentsMargins(0, 10, 15, 10)
 
-        layout.addWidget(self.tabela)
+        self.scroll.setWidget(self.container_blocos)
+        layout_principal.addWidget(self.scroll)
 
-        self.carregando = False
-        self.todos_processos = []
+        # Inicia o carregamento
         self.carregar_dados()
 
+    # ==========================================
+    # LÓGICA DE DADOS E CONSTRUÇÃO DOS BLOCOS
+    # ==========================================
     def abrir_formulario(self):
         janela = DialogNovoProcesso()
         if janela.exec() == QDialog.DialogCode.Accepted:
@@ -154,8 +171,10 @@ class TelaProcessos(QWidget):
 
         processos_filtrados = []
 
+        # Aplica os filtros da lógica original
         for p in self.todos_processos:
             protocolo_str = f"2026.08.{p.id:04d}"
+
             if termo_pesquisa:
                 if termo_pesquisa in p.nome_cliente.lower() or termo_pesquisa in protocolo_str:
                     processos_filtrados.append(p)
@@ -169,63 +188,75 @@ class TelaProcessos(QWidget):
 
             processos_filtrados.append(p)
 
-        self.tabela.setRowCount(len(processos_filtrados))
-        for linha, p in enumerate(processos_filtrados):
+        self.renderizar_blocos(processos_filtrados)
+        self.carregando = False
 
-            # 1. NOME / PROCESSO (Envelopado para ficar sem fundo cinza)
-            container_np = QWidget()
-            container_np.setStyleSheet("background-color: transparent;")
-            layout_np = QVBoxLayout(container_np)
-            layout_np.setContentsMargins(15, 5, 10, 5)
-            layout_np.setSpacing(2)
+    def renderizar_blocos(self, processos_filtrados):
+        # Limpa os blocos velhos da tela
+        for i in reversed(range(self.layout_blocos.count())):
+            widget_item = self.layout_blocos.itemAt(i)
+            if widget_item.widget():
+                widget_item.widget().setParent(None)
 
+        if not processos_filtrados:
+            lbl_vazio = QLabel("Nenhum processo encontrado com estes filtros.")
+            lbl_vazio.setStyleSheet("color: #8A92A6; font-style: italic;")
+            lbl_vazio.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.layout_blocos.addWidget(lbl_vazio)
+            self.layout_blocos.addStretch()
+            return
+
+        for p in processos_filtrados:
+            bloco = QFrame()
+            bloco.setStyleSheet("""
+                QFrame { background-color: #0B0E14; border: 1px solid #1E2532; border-radius: 10px; }
+                QFrame:hover { border: 1px solid #2962FF; background-color: #11151F; }
+            """)
+
+            lay_bloco = QHBoxLayout(bloco)
+            lay_bloco.setContentsMargins(20, 15, 20, 15)
+
+            # ---> Info Cliente (Esquerda)
+            info_lay = QVBoxLayout()
             lbl_nome = QLabel(p.nome_cliente)
-            lbl_nome.setStyleSheet("font-weight: bold; font-size: 14px; color: #E2E8F0;")
-            lbl_nome.setWordWrap(True)
-            lbl_protocolo = QLabel(f"Proc. 2026.08.{p.id:04d}")
-            lbl_protocolo.setStyleSheet("font-size: 11px; color: #8A92A6;")
+            lbl_nome.setStyleSheet(
+                "color: white; font-weight: bold; font-size: 15px; border: none; background: transparent;")
+            lbl_detalhes = QLabel(f"Proc. 2026.08.{p.id:04d}   |   CPF: {p.cpf or '-'}")
+            lbl_detalhes.setStyleSheet("color: #8A92A6; font-size: 11px; border: none; background: transparent;")
+            info_lay.addWidget(lbl_nome)
+            info_lay.addWidget(lbl_detalhes)
+            lay_bloco.addLayout(info_lay)
 
-            layout_np.addWidget(lbl_nome)
-            layout_np.addWidget(lbl_protocolo)
-            layout_np.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-            self.tabela.setCellWidget(linha, 0, container_np)
+            lay_bloco.addStretch()
 
-            # 2. ARQUIVOS (Envelopado)
+            # ---> Documentos Anexados (Centro)
             db = SessionLocal()
             docs = listar_documentos_do_processo(db, p.id)
             db.close()
 
-            container_icones = QWidget()
-            container_icones.setStyleSheet("background-color: transparent;")
-            layout_icones = QHBoxLayout(container_icones)
-            layout_icones.setContentsMargins(15, 0, 0, 0)
-            layout_icones.setSpacing(5)
-            layout_icones.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-
+            docs_lay = QHBoxLayout()
+            docs_lay.setSpacing(5)
             if docs:
                 for doc in docs:
                     extensao = doc.caminho_arquivo.lower().split('.')[-1]
-                    caminho_icone = f"assets/icones/{extensao}.png"
-                    btn_doc = QPushButton()
-                    btn_doc.setProperty("class", "btn-icone")
-                    btn_doc.setCursor(Qt.CursorShape.PointingHandCursor)
+                    btn_doc = QPushButton("📄" if extensao == "pdf" else "🖼️")
+                    btn_doc.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
                     btn_doc.setToolTip(f"Abrir: {doc.nome_arquivo}")
-
-                    if os.path.exists(caminho_icone):
-                        btn_doc.setIcon(QIcon(caminho_icone))
-                        btn_doc.setIconSize(QSize(28, 28))
-                    else:
-                        btn_doc.setText("📄" if extensao == "pdf" else "🖼️")
-
+                    btn_doc.setStyleSheet("""
+                        QPushButton { background-color: #1A2133; border: 1px solid #2C364C; border-radius: 4px; padding: 6px; font-size: 14px; }
+                        QPushButton:hover { background-color: #2962FF; }
+                    """)
                     btn_doc.clicked.connect(lambda checked, caminho=doc.caminho_arquivo: self.abrir_documento(caminho))
-                    layout_icones.addWidget(btn_doc)
+                    docs_lay.addWidget(btn_doc)
             else:
-                lbl_vazio = QLabel("-")
-                lbl_vazio.setStyleSheet("color: #8a8d98;")
-                layout_icones.addWidget(lbl_vazio)
-            self.tabela.setCellWidget(linha, 1, container_icones)
+                lbl_sem_doc = QLabel("Sem anexos")
+                lbl_sem_doc.setStyleSheet("color: #4B5563; font-size: 11px; border: none; background: transparent;")
+                docs_lay.addWidget(lbl_sem_doc)
 
-            # 3. SITUAÇÃO (USANDO O NOSVO COMPONENTE COMBOSTATUS)
+            lay_bloco.addLayout(docs_lay)
+            lay_bloco.addSpacing(30)
+
+            # ---> Status Interativo (Direita)
             status_finais = ["Completo", "Entregue", "CRAS", "Arquivado"]
             if p.status in status_finais:
                 opcoes = [p.status, "Completo", "Entregue", "CRAS", "Arquivado", "Devolução (Retornar)"]
@@ -233,41 +264,49 @@ class TelaProcessos(QWidget):
                 opcoes = [p.status, "Aguardando Documento", "Falta par", "Revisar", "Pendente", "Completo"]
             opcoes_limpas = list(dict.fromkeys(opcoes))
 
-            # Aqui está a mágica: 1 única linha instancia, pinta com a cor certa e dá o design de pílula!
-            combo_status = ComboStatus(opcoes_limpas, p.status)
-            combo_status.setMinimumWidth(180)
+            combo_status = QComboBox()
+            combo_status.addItems(opcoes_limpas)
+            combo_status.setCurrentText(p.status)
+            combo_status.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            combo_status.setStyleSheet("""
+                QComboBox { background-color: #1A2133; color: white; border: 1px solid #2C364C; border-radius: 6px; padding: 5px 15px; font-weight: bold; }
+                QComboBox::drop-down { border: none; }
+            """)
+            # Conecta a lógica de migração
             combo_status.currentTextChanged.connect(
                 lambda texto, pid=p.id, combo=combo_status: self.mudar_status_logica(pid, texto, combo))
+            lay_bloco.addWidget(combo_status)
 
-            # Coloca ele na tabela usando o envelopamento transparente para não ficar com fundo cinza
-            self.tabela.setCellWidget(linha, 2, wrap_transparente(combo_status))
+            lay_bloco.addSpacing(15)
 
-            # 4. AÇÕES
-            btn_acao = QPushButton("👁️")
-            btn_acao.setProperty("class", "btn-icone")
-            btn_acao.setCursor(Qt.CursorShape.PointingHandCursor)
+            # ---> Botão Abrir Ficha
+            btn_acao = QPushButton("👁️ Ficha")
+            btn_acao.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            btn_acao.setStyleSheet(
+                "background-color: #2962FF; color: white; border-radius: 6px; padding: 8px 15px; font-weight: bold;")
             btn_acao.clicked.connect(lambda checked, pid=p.id: self.abrir_detalhes(pid))
+            lay_bloco.addWidget(btn_acao)
 
-            self.tabela.setCellWidget(linha, 3, wrap_transparente(btn_acao, Qt.AlignmentFlag.AlignRight))
+            self.layout_blocos.addWidget(bloco)
 
-        self.carregando = False
+        self.layout_blocos.addStretch()
 
+    # ==========================================
+    # LÓGICA DE STATUS E MIGRAÇÃO
+    # ==========================================
     def mudar_status_logica(self, processo_id, novo_status, combo):
         if self.carregando: return
 
-        # AÇÃO DE EMERGÊNCIA: DEVOLUÇÃO
         if novo_status == "Devolução (Retornar)":
             resposta = QMessageBox.question(self, "Confirmação de Devolução",
                                             "Deseja retornar este documento para a lista de Ativos (Pendente)?\nIsso removerá ele dos arquivados.",
                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-
             if resposta == QMessageBox.StandardButton.Yes:
                 self.salvar_e_recarregar(processo_id, "Pendente")
             else:
                 QTimer.singleShot(1, self.carregar_dados)
             return
 
-        # AÇÃO DE MIGRAÇÃO
         if novo_status == "Completo":
             dialog = DialogMigracao(self)
             if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -288,4 +327,4 @@ class TelaProcessos(QWidget):
         if os.path.exists(caminho):
             os.startfile(caminho)
         else:
-            QMessageBox.warning(self, "Erro", "Arquivo não encontrado.")
+            QMessageBox.warning(self, "Erro", "Arquivo não encontrado fisicamente na pasta.")
