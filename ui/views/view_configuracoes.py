@@ -54,7 +54,7 @@ class TelaConfiguracoes(QWidget):
         layout_dirs.addWidget(lbl_tit_dirs)
 
         # Pasta do Scanner
-        layout_dirs.addWidget(self.criar_label("Pasta de Entrada do Scanner (Onde os arquivos caem):"))
+        layout_dirs.addWidget(self.criar_label("Pasta de Entrada do Scanner (Onde as fotos caem):"))
         box_scanner = QHBoxLayout()
         self.inp_scanner = QLineEdit()
         self.inp_scanner.setReadOnly(True)
@@ -84,6 +84,22 @@ class TelaConfiguracoes(QWidget):
         box_processos.addWidget(self.inp_processos)
         box_processos.addWidget(btn_processos)
         layout_dirs.addLayout(box_processos)
+
+        # NOVA PASTA: Relatórios / FERC
+        layout_dirs.addWidget(self.criar_label("Pasta Raiz de Auditoria e Relatórios (FERC / CRAS):"))
+        box_ferc = QHBoxLayout()
+        self.inp_ferc = QLineEdit()
+        self.inp_ferc.setReadOnly(True)
+        self.inp_ferc.setStyleSheet(
+            "background-color: #0B0E14; border: 1px solid #1E2532; border-radius: 6px; color: white; padding: 10px;")
+        btn_ferc = QPushButton("Procurar")
+        btn_ferc.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_ferc.setStyleSheet(
+            "background-color: #1A2133; color: white; border: 1px solid #2C364C; padding: 10px; border-radius: 6px;")
+        btn_ferc.clicked.connect(lambda: self.selecionar_pasta(self.inp_ferc))
+        box_ferc.addWidget(self.inp_ferc)
+        box_ferc.addWidget(btn_ferc)
+        layout_dirs.addLayout(box_ferc)
 
         btn_salvar_dirs = QPushButton("💾 Salvar Diretórios")
         btn_salvar_dirs.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -159,14 +175,16 @@ class TelaConfiguracoes(QWidget):
 
     def carregar_dados_na_tela(self):
         """Lê os arquivos reais e joga nos inputs"""
-        # 1. Carrega Diretórios
-        try:
-            with open(self.caminho_config_app, "r", encoding="utf-8") as f:
-                config_app = json.load(f)
-                self.inp_scanner.setText(config_app.get("pasta_scanner", ""))
-                self.inp_processos.setText(config_app.get("pasta_processos", ""))
-        except:
-            pass
+
+        def carregar_dados_na_tela(self):
+            try:
+                with open(self.caminho_config_app, "r", encoding="utf-8") as f:
+                    config_app = json.load(f)
+                    self.inp_scanner.setText(config_app.get("pasta_scanner", ""))
+                    self.inp_processos.setText(config_app.get("pasta_processos", ""))
+                    self.inp_ferc.setText(config_app.get("pasta_ferc", ""))  # PUXA DO JSON
+            except:
+                pass
 
         # 2. Carrega JSON dos Modelos
         try:
@@ -192,7 +210,8 @@ class TelaConfiguracoes(QWidget):
     def salvar_diretorios(self):
         dados = {
             "pasta_scanner": self.inp_scanner.text().strip(),
-            "pasta_processos": self.inp_processos.text().strip()
+            "pasta_processos": self.inp_processos.text().strip(),
+            "pasta_ferc": self.inp_ferc.text().strip()  # SALVA NO JSON
         }
         try:
             with open(self.caminho_config_app, "w", encoding="utf-8") as f:

@@ -1,6 +1,8 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QPushButton, QStackedWidget, QLabel, QFrame)
 from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QCursor, QIcon
 
 # Importando todas as nossas 4 telas!
 from ui.views.view_dashboard import TelaDashboard
@@ -47,15 +49,15 @@ class MainWindow(QMainWindow):
         layout_sidebar.addWidget(lbl_logo)
 
         # Criando os  botões do menu
-        self.btn_dashboard = self.criar_botao_menu("🏠 Dashboard")
-        self.btn_processos = self.criar_botao_menu("📄 Documentos")
-        self.btn_requerimentos = self.criar_botao_menu("📝 Requerimentos")
-        self.btn_relatorios = self.criar_botao_menu("📊 Relatórios")
-        self.btn_tarefas = self.criar_botao_menu("✅ Tarefas")
-        self.btn_agenda = self.criar_botao_menu("📅 Agenda")
-        self.btn_config = self.criar_botao_menu("⚙️ Configurações")
-        self.btn_casamentos = self.criar_botao_menu("💍 Casamentos")
-        self.btn_scanner = self.criar_botao_menu("🖨️ Scanner e OCR")
+        self.btn_dashboard = self.criar_botao_menu("Dashboard", "assets/icons/icon_menu_dashboard.png")
+        self.btn_processos = self.criar_botao_menu("Documentos", "assets/icons/icon_menu_processos.png")
+        self.btn_tarefas = self.criar_botao_menu("Tarefas", "assets/icons/icon_menu_tarefas.png")
+        self.btn_requerimentos = self.criar_botao_menu("Requerimentos", "assets/icons/icon_menu_requerimentos.png")
+        self.btn_relatorios = self.criar_botao_menu("Relatórios", "assets/icons/icon_menu_relatorios.png")
+        self.btn_agenda = self.criar_botao_menu("Agenda", "assets/icons/icon_menu_agenda.png")
+        self.btn_scanner = self.criar_botao_menu("Scanner e OCR", "assets/icons/icon_menu_scanner.png")
+        self.btn_config = self.criar_botao_menu("Configurações", "assets/icons/icon_menu_config.png")
+        self.btn_casamentos = self.criar_botao_menu("Casamentos", "assets/icons/icon_menu_casamentos.png")
 
         # Ligando os cliques
         self.btn_dashboard.clicked.connect(lambda: self.mudar_tela(0))
@@ -125,11 +127,35 @@ class MainWindow(QMainWindow):
         # Aqui no futuro faremos ele ler do banco, mas já deixamos a mecânica pronta:
         notificar(self, "Bom dia! Você tem 1 Casamento e 2 Tarefas para hoje. 📅", "info")
 
+    def criar_botao_menu(self, texto, caminho_icone):
+        btn = QPushButton(f"  {texto}")  # Os dois espaços dão um respiro entre o ícone e o texto
 
-    def criar_botao_menu(self, texto):
-        btn = QPushButton(texto)
-        btn.setProperty("class", "menu-btn")
+        # Injetando o ícone
+        btn.setIcon(QIcon(caminho_icone))
+        btn.setIconSize(QSize(24, 24))
+
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn.setCheckable(True)
+        btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #8A92A6;
+                text-align: left;
+                padding: 12px 15px;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1A2133;
+                color: white;
+            }
+            QPushButton:checked {
+                background-color: #2962FF;
+                color: white;
+            }
+        """)
         return btn
 
     def mudar_tela(self, indice):

@@ -1,9 +1,11 @@
 import os
 import json
+import re
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit,
                              QComboBox, QPushButton, QMessageBox)
 from database.conexao import SessionLocal
 from database.crud import criar_processo
+
 
 
 class DialogNovoProcesso(QDialog):
@@ -43,6 +45,8 @@ class DialogNovoProcesso(QDialog):
         layout.addWidget(self.btn_salvar)
 
     def salvar_dados(self):
+
+
         nome = self.input_nome.text().strip()
         cpf = self.input_cpf.text().strip()
         whatsapp = self.input_whatsapp.text().strip()
@@ -53,14 +57,10 @@ class DialogNovoProcesso(QDialog):
             return
 
         db = SessionLocal()
-        # Salva no banco e pega a ficha criada
         novo_processo = criar_processo(db, nome_cliente=nome, cpf=cpf, tipo_servico=servico, telefone_whatsapp=whatsapp)
         db.close()
 
-        # =========================================================
-        # A PONTE: CRIA A PASTA FÍSICA LENDO O ARQUIVO DE CONFIGURAÇÃO
-        # =========================================================
-        pasta_base = os.path.join(os.getcwd(), "Arquivos_Cartorio")  # Pasta padrão
+        pasta_base = os.path.join(os.getcwd(), "Arquivos_Cartorio")
         try:
             caminho_config = os.path.join(os.getcwd(), "config", "app_config.json")
             if os.path.exists(caminho_config):
@@ -71,10 +71,16 @@ class DialogNovoProcesso(QDialog):
         except:
             pass
 
-        # Formato Padrão: Proc_001_NOME_DO_CLIENTE
-        nome_pasta = f"Proc_{novo_processo.id:03d}_{nome.replace(' ', '_').upper()}"
+        # =========================================================
+        # TRAVA DE SEGURANÇA: SANITIZAÇÃO ANTI-CRASH DO WINDOWS
+        # Substitui barras, aspas, etc, por espaço em branco
+        # Ex: "Kauan / Silva" vira "KAUAN_SILVA" em vez de crashar o PC
+        # =========================================================
+        nome_seguro = re.sub(r'[\\/*?:"<>|]', "", nome)
+        nome_pasta = f"Proc_{novo_processo.id:03d}_{nome_seguro.replace(' ', '_').upper()}"
         pasta_destino = os.path.join(pasta_base, nome_pasta)
+
         os.makedirs(pasta_destino, exist_ok=True)
 
-        QMessageBox.information(self, "Sucesso", "Processo salvo e Pasta de Arquivos criada com sucesso!")
+        QMessageBox.information(self, "Sucesso", "Processo salvo e Pasta de Arquivos criada com segurança!")
         self.accept()

@@ -1,5 +1,6 @@
 import os
 import fitz  # PyMuPDF
+import json
 import pandas as pd
 import threading
 from rapidfuzz import fuzz
@@ -27,11 +28,19 @@ class TelaRelatorios(QWidget):
         # ⚠️ DEFINA AQUI O CAMINHO DA SUA PASTA RAIZ DO FERC
         # Exemplo: r"C:\Cartorio\FERC" ou r"D:\Documentos\Relatorios_Corregedoria"
         # =====================================================================
-        self.diretorio_raiz = r"C:\CAMINHO\PARA\A\PASTA\FERC"
-        os.makedirs(self.diretorio_raiz, exist_ok=True)  # Evita erro se a pasta ainda não existir no PC atual
+        self.diretorio_raiz = os.path.join(os.getcwd(), "Arquivos_Cartorio")  # Fallback padrão
 
-        self.sinais = LogSignal()
-        self.sinais.update_log.connect(self.escrever_log_na_tela)
+        try:
+            caminho_config = os.path.join(os.getcwd(), "config", "app_config.json")
+            if os.path.exists(caminho_config):
+                with open(caminho_config, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    if cfg.get("pasta_ferc"):
+                        self.diretorio_raiz = cfg["pasta_ferc"]
+        except:
+            pass
+
+        os.makedirs(self.diretorio_raiz, exist_ok=True)
 
         layout_principal = QVBoxLayout(self)
         layout_principal.setContentsMargins(40, 30, 40, 30)
