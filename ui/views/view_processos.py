@@ -9,7 +9,7 @@ from database.conexao import SessionLocal
 from database.crud import listar_todos_processos, atualizar_status_processo, listar_documentos_do_processo
 from ui.dialogs.form_novo_processo import DialogNovoProcesso
 from ui.dialogs.form_detalhes_processo import DialogDetalhesProcesso
-
+from ui.componentes import VisualizadorDocumento
 
 # =========================================================
 # TELA FLUTUANTE DE MIGRAÇÃO (Lógica Original Mantida)
@@ -325,6 +325,8 @@ class TelaProcessos(QWidget):
 
     def abrir_documento(self, caminho):
         if os.path.exists(caminho):
-            os.startfile(caminho)
+            # Chama o componente global que criamos!
+            visualizador = VisualizadorDocumento(caminho, self)
+            visualizador.exec()
         else:
             QMessageBox.warning(self, "Erro", "Arquivo não encontrado fisicamente na pasta.")

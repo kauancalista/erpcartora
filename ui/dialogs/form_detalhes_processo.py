@@ -11,6 +11,10 @@ from database.conexao import SessionLocal
 from database.crud import (obter_processo_por_id, atualizar_status_processo,
                            listar_documentos_do_processo, adicionar_documento)
 
+# IMPORTANDO NOSSAS DUAS TELAS MÁGICAS:
+from ui.dialogs.form_scanner import DialogScannerPopUp
+from ui.componentes import VisualizadorDocumento
+
 
 class DialogDetalhesProcesso(QDialog):
     def __init__(self, processo_id):
@@ -44,22 +48,23 @@ class DialogDetalhesProcesso(QDialog):
         layout.addWidget(lbl_nome)
         layout.addWidget(lbl_servico)
 
-        # --- SEÇÃO DE ARQUIVOS (O CORE DMS) ---
+        # --- SEÇÃO DE ARQUIVOS ---
         layout_arq_topo = QHBoxLayout()
         lbl_arq_titulo = QLabel("Arquivos do Processo")
         lbl_arq_titulo.setStyleSheet("font-weight: bold; font-size: 16px;")
 
-        btn_anexar = QPushButton("+ Anexar Manualmente")
+        btn_anexar = QPushButton("📎 Anexar Manualmente")
         btn_anexar.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn_anexar.setStyleSheet(
-            "background-color: #2962FF; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
+            "background-color: #1A2133; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
         btn_anexar.clicked.connect(self.abrir_explorador_arquivos)
 
-        btn_scanner = QPushButton("🖨️ Ir para o Scanner OCR")
+        # CONECTANDO O BOTÃO AO NOSSO POPUP DE SCANNER!
+        btn_scanner = QPushButton("🖨️ Digitalizar Agora")
         btn_scanner.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn_scanner.setStyleSheet(
-            "background-color: #8E44AD; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
-        btn_scanner.clicked.connect(self.avisar_scanner)
+            "background-color: #2962FF; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
+        btn_scanner.clicked.connect(self.abrir_scanner_expresso)
 
         layout_arq_topo.addWidget(lbl_arq_titulo)
         layout_arq_topo.addStretch()
@@ -102,7 +107,7 @@ class DialogDetalhesProcesso(QDialog):
                 info_layout.addWidget(lbl_nome_doc)
                 info_layout.addWidget(lbl_tipo_doc)
 
-                btn_abrir = QPushButton("Abrir Arquivo")
+                btn_abrir = QPushButton("Abrir no App")
                 btn_abrir.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
                 btn_abrir.setStyleSheet(
                     "background-color: #27AE60; color: white; padding: 8px 15px; border-radius: 6px; font-weight: bold;")
@@ -140,48 +145,82 @@ class DialogDetalhesProcesso(QDialog):
         layout_status.addWidget(btn_salvar_status)
         layout.addLayout(layout_status)
 
-    # --- A MÁGICA: COPIA O ARQUIVO PRA PASTA DO PROCESSO E SALVA NO BANCO ---
+    # ==========================================
+    # CÉREBRO DE DIRETÓRIOS E SINCRONIZAÇÃO
+    # ==========================================
+    def obter_pasta_do_processo(self):
+        """Descobre dinamicamente qual é a pasta física deste cliente"""
+        pasta_base = os.path.join(os.getcwd(), "Arquivos_Cartorio")
+        try:
+            caminho_config = os.path.join(os.getcwd(), "config", "app_config.json")
+            if os.path.exists(caminho_config):
+                with open(caminho_config, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    if cfg.get("pasta_processos"): pasta_base = cfg["pasta_processos"]
+        except:
+            pass
+
+        nome_pasta = f"Proc_{self.processo.id:03d}_{self.processo.nome_cliente.replace(' ', '_').upper()}"
+        pasta_destino = os.path.join(pasta_base, nome_pasta)
+        os.makedirs(pasta_destino, exist_ok=True)
+        return pasta_destino
+
+    def sincronizar_pasta_com_banco(self):
+        """Mágica pura: Lê a pasta e salva automaticamente novos arquivos no Banco!"""
+        pasta = self.obter_pasta_do_processo()
+        db = SessionLocal()
+
+        # Pega a lista de arquivos que já estão salvos no banco
+        docs_no_banco = [doc.nome_arquivo for doc in listar_documentos_do_processo(db, self.processo_id)]
+
+        # Varre a pasta física do Windows
+        for arquivo in os.listdir(pasta):
+            if arquivo not in docs_no_banco:
+                # Arquivo fantasma achado! Cadastrando no banco agora.
+                caminho_final = os.path.join(pasta, arquivo)
+                adicionar_documento(db, self.processo_id, arquivo, "Documento", caminho_final)
+
+        db.close()
+
+    # ==========================================
+    # AÇÕES DOS BOTÕES E ARQUIVOS
+    # ==========================================
+    def abrir_scanner_expresso(self):
+        pasta_destino = self.obter_pasta_do_processo()
+
+        # Abre a nossa nova tela mágica de Scanner
+        dialog = DialogScannerPopUp(pasta_destino, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Se a secretária clicou em Salvar lá no PopUp, a gente atualiza a tela
+            self.sincronizar_pasta_com_banco()
+            self.carregar_dados_do_banco()
+            self.montar_layout()
+
     def abrir_explorador_arquivos(self):
         caminho_arquivo, _ = QFileDialog.getOpenFileName(
             self, "Selecione o Documento", "", "PDF e Imagens (*.pdf *.jpg *.jpeg *.png);;Todos (*)"
         )
         if caminho_arquivo:
             nome_arquivo_original = os.path.basename(caminho_arquivo)
+            pasta_destino = self.obter_pasta_do_processo()
 
-            # 1. Puxa a Configuração da Pasta
-            pasta_base = os.path.join(os.getcwd(), "Arquivos_Cartorio")
-            try:
-                caminho_config = os.path.join(os.getcwd(), "config", "app_config.json")
-                if os.path.exists(caminho_config):
-                    with open(caminho_config, "r", encoding="utf-8") as f:
-                        cfg = json.load(f)
-                        if cfg.get("pasta_processos"): pasta_base = cfg["pasta_processos"]
-            except:
-                pass
-
-            # 2. Reconstrói o Caminho da Pasta deste Cliente
-            nome_pasta = f"Proc_{self.processo.id:03d}_{self.processo.nome_cliente.replace(' ', '_').upper()}"
-            pasta_destino = os.path.join(pasta_base, nome_pasta)
-            os.makedirs(pasta_destino, exist_ok=True)  # Garante que a pasta existe
-
-            # 3. Faz a Cópia do Arquivo
             caminho_final = os.path.join(pasta_destino, nome_arquivo_original)
             shutil.copy2(caminho_arquivo, caminho_final)
 
-            # 4. Grava no Banco
-            db = SessionLocal()
-            adicionar_documento(
-                db=db,
-                processo_id=self.processo_id,
-                nome_arquivo=nome_arquivo_original,
-                tipo_documento="Anexo Manual",
-                caminho_arquivo=caminho_final
-            )
-            db.close()
+            # Auto-Sync! Atualiza o banco
+            self.sincronizar_pasta_com_banco()
 
             QMessageBox.information(self, "Sucesso", "Documento anexado e copiado para a pasta do processo!")
             self.carregar_dados_do_banco()
             self.montar_layout()
+
+    def abrir_doc(self, caminho):
+        if os.path.exists(caminho):
+            # NOVIDADE: Abre no nosso leitor interno que dá zoom, em vez de jogar pro Windows!
+            visor = VisualizadorDocumento(caminho, self)
+            visor.exec()
+        else:
+            QMessageBox.warning(self, "Erro", "Arquivo físico não encontrado na pasta.")
 
     def salvar_status(self):
         novo_status = self.combo_status.currentText()
@@ -189,14 +228,3 @@ class DialogDetalhesProcesso(QDialog):
         atualizar_status_processo(db, self.processo_id, novo_status)
         db.close()
         self.accept()
-
-    def abrir_doc(self, caminho):
-        if os.path.exists(caminho):
-            os.startfile(caminho)
-        else:
-            QMessageBox.warning(self, "Erro",
-                                "Arquivo físico não encontrado na pasta. Ele pode ter sido movido ou excluído.")
-
-    def avisar_scanner(self):
-        QMessageBox.information(self, "Dica",
-                                "Para usar o OCR com Inteligência Artificial, feche esta janela e acesse a aba 'Scanner e OCR' no menu lateral esquerdo.")
