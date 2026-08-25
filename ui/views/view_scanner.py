@@ -160,20 +160,40 @@ class TelaScanner(QWidget):
     # ==========================================
     # LÓGICA DE INTEGRAÇÃO COM O CELULAR
     # ==========================================
+
+    def obter_ip_local(self):
+        import socket
+        try:
+            # Cria uma conexão fantasma com o DNS do Google para forçar o Windows a revelar o IP real da rede local
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "127.0.0.1"  # IP de segurança caso o PC esteja sem internet
+
     def toggle_servidor(self):
         if not self.servidor_ligado:
+            # LIGAR
             self.thread_servidor = threading.Thread(target=iniciar_flask, daemon=True)
             self.thread_servidor.start()
 
             self.timer_mobile.start(2000)
             self.servidor_ligado = True
 
+            # Puxa o IP real da máquina na rede na hora H
+            ip_atual = self.obter_ip_local()
+
             self.btn_mobile.setText("📱 Desativar Celular")
             self.btn_mobile.setStyleSheet(
                 "background-color: #E74C3C; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
-            self.lbl_status_mobile.setText("Sincronizando via rede (Porta 5000)...")
-            self.lbl_status_mobile.setStyleSheet("color: #2ECC71; font-size: 11px; font-weight: bold;")
+
+            # Mostra o endereço exato que deve ser digitado no celular
+            self.lbl_status_mobile.setText(f"Acesse no celular:\nhttps://{ip_atual}:5000")
+            self.lbl_status_mobile.setStyleSheet("color: #2ECC71; font-size: 13px; font-weight: bold;")
         else:
+            # DESLIGAR
             self.timer_mobile.stop()
             parar_flask()  # Desliga o servidor Flask
             self.servidor_ligado = False
@@ -403,14 +423,12 @@ class TelaScanner(QWidget):
         for item in self.arquivos_na_fila:
             if item["ocr_feito"]: continue
 
-            caminho = item["caminho"]
-            caminho_jpg = caminho
-
-            if caminho.lower().endswith(".pdf"):
+            caminho_jpg = item["caminho"]
+            if caminho_jpg.lower().endswith(".pdf"):
                 try:
-                    doc = fitz.open(caminho)
+                    doc = fitz.open(caminho_jpg)
                     pix = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2))
-                    caminho_jpg = caminho.replace(".pdf", "_temp_ocr.jpg")
+                    caminho_jpg = caminho_jpg.replace(".pdf", "_temp_ocr.jpg")
                     pix.save(caminho_jpg)
                 except:
                     pass
@@ -425,88 +443,79 @@ class TelaScanner(QWidget):
             texto_limpo = " ".join(linhas_reais)
             item["texto_ocr"] = texto_limpo
 
-            # Identifica de qual nome vamos buscar no banco
             texto_busca_processo = item["nome_sugerido"].upper() if item.get("origem") == "mobile" else texto_limpo
 
             melhor_score = 0
             melhor_index = 0
 
-            # Procura vínculo no banco usando Partial Ratio (Ex: Acha "MARIA SILVA" dentro de "MARIA SILVA AVERBACAO")
+            # 1. TENTA ACHAR NO BANCO DE DADOS PRIMEIRO
             for i, proc in enumerate(self.processos_ativos_cache, start=1):
-                score = fuzz.partial_ratio(proc.nome_cliente.upper(), texto_busca_processo)
+                nome_proc = proc.nome_cliente.upper()
+
+                # PROTEÇÃO CONTRA O "BUG DO S": Ignora processos com nome de teste muito curto (ex: "S", "A")
+                if len(nome_proc) <= 3: continue
+
+                # Usamos token_set_ratio! Ele é imune a falhas de OCR (mistura de palavras).
+                score = fuzz.token_set_ratio(nome_proc, texto_busca_processo)
                 if score > 80 and score > melhor_score:
                     melhor_score = score
                     melhor_index = i
 
-            # Lógica para o CANON (Muda o nome do arquivo)
+            # 2. SE NÃO TEM PROCESSO (OU VEIO DO SCANNER CANON), EXTRAI O NOME DO PAPEL
             if item.get("origem") != "mobile":
-                padrao_titulo = r'(CERTIDÃO DE NASCIMENTO|CERTIDÃO DE CASAMENTO|CERTIDÃO DE ÓBITO|CERTIDAO DE NASCIMENTO|CERTIDAO DE CASAMENTO|CERTIDAO DE OBITO)'
-                busca_titulo = re.search(padrao_titulo, texto_limpo, re.IGNORECASE)
-
-                tipo_doc = "DOCUMENTO"
-                if busca_titulo:
-                    tipo_doc = busca_titulo.group(0).upper()
-                    tipo_doc = tipo_doc.replace("CERTIDAO", "CERTIDÃO").replace("OBITO", "ÓBITO")
-
-                nomes_encontrados = []
-                if "CASAMENTO" in tipo_doc:
-                    for idx, linha in enumerate(linhas_reais):
-                        if "NJUGE" in linha or "CONTRATANTE" in linha:
-                            if idx + 1 < len(linhas_reais): nomes_encontrados.append(linhas_reais[idx + 1])
-                            if idx + 2 < len(linhas_reais): nomes_encontrados.append(linhas_reais[idx + 2])
-                            break
-                else:
-                    for idx, linha in enumerate(linhas_reais):
-                        if idx > 25: break
-                        if "NOME" in linha:
-                            if ":" in linha:
-                                possivel_nome = linha.split(":", 1)[1].strip()
-                                if len(possivel_nome) > 3:
-                                    nomes_encontrados.append(possivel_nome)
-                                    break
-                            if idx + 1 < len(linhas_reais):
-                                nomes_encontrados.append(linhas_reais[idx + 1])
-                            break
-
-                nomes_limpos = []
-                for n in nomes_encontrados:
-                    n_limpo = re.sub(r'[^A-ZÁÀÂÃÉÈÍÏÓÒÔÕÚÇ ]', '', n).strip()
-                    n_limpo = re.sub(r'\s+', ' ', n_limpo)
-                    if len(n_limpo) > 2 and "MATRICULA" not in n_limpo:
-                        nomes_limpos.append(n_limpo)
-
-                if "CASAMENTO" in tipo_doc and len(nomes_limpos) >= 2:
-                    nome_extraido_pelo_sistema = f"{nomes_limpos[0]} E {nomes_limpos[1]}"
-                elif len(nomes_limpos) > 0:
-                    nome_extraido_pelo_sistema = nomes_limpos[0]
-                else:
-                    nome_extraido_pelo_sistema = ""
-
-                item["nome_extraido"] = nome_extraido_pelo_sistema
-
-                if nome_extraido_pelo_sistema:
-                    nome_final_arquivo = nome_extraido_pelo_sistema
-                elif melhor_index > 0:
+                if melhor_index > 0:
                     nome_final_arquivo = self.processos_ativos_cache[melhor_index - 1].nome_cliente.upper()
                 else:
-                    nome_final_arquivo = "NAO IDENTIFICADO"
+                    nome_final_arquivo = ""
+                    # Filtro anti-sujeira de cartório
+                    termos_ignorados = {
+                        "REPUBLICA", "REPÚBLICA", "FEDERATIVA", "BRASIL", "REGISTRO", "CIVIL",
+                        "PESSOAS", "NATURAIS", "CERTIDAO", "CERTIDÃO", "CASAMENTO", "NASCIMENTO",
+                        "OBITO", "ÓBITO", "NUMERO", "NÚMERO", "CPF", "MATRICULA", "MATRÍCULA",
+                        "LIVRO", "FOLHA", "FOLHAS", "TERMO", "NOME", "ATUAL", "CONJUGE", "CÔNJUGE",
+                        "CONJUGES", "CÔNJUGES", "CON", "CÔN", "VARA", "JUIZO", "JUÍZO",
+                        "COMARCA", "MUNICIPIO", "MUNICÍPIO", "ESTADO", "CARTORIO", "CARTÓRIO",
+                        "DOC", "DOCUMENTO", "DOS", "DAS", "AOS", "DIAS", "MES", "MÊS", "ANO",
+                        "JANEIRO", "FEVEREIRO", "MARCO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
+                        "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO", "DATA",
+                        "LAVRADO", "SOB", "LOCAL"
+                    }
 
-                item["nome_sugerido"] = f"{tipo_doc} - {nome_final_arquivo}"
+                    for linha in linhas_reais:
+                        l_limpa = re.sub(r'[^A-ZÀ-Ÿ ]', '', linha).strip()
+                        l_limpa = re.sub(r'\s+', ' ', l_limpa)
+                        if len(l_limpa) < 8: continue  # Linhas curtas demais são ignoradas
 
-            # Se a origem foi "mobile", o nome_sugerido continua intacto (Ex: "MARIA SILVA AVERBACAO")
+                        palavras = l_limpa.split()
+                        boilers = [p for p in palavras if p in termos_ignorados or len(p) <= 2]
+
+                        # Se mais da metade da linha for burocracia, essa linha é descartada
+                        if len(boilers) >= len(palavras) / 2: continue
+
+                        # Se a linha sobreviveu ao filtro e parece um nome, CAPTURA!
+                        if len(palavras) >= 3 or " DE " in l_limpa or " DA " in l_limpa or " DOS " in l_limpa:
+                            nome_final_arquivo = l_limpa
+                            break
+
+                    if not nome_final_arquivo:
+                        nome_final_arquivo = "NAO IDENTIFICADO"
+
+                item["nome_sugerido"] = nome_final_arquivo
 
             item["processo_index"] = melhor_index
             item["ocr_feito"] = True
 
         self.atualizar_lista_inbox()
-        self.txt_ocr_preview.setText("Lote processado! Nomes formatados e vínculos realizados.")
+        self.txt_ocr_preview.setText("Lote processado! Nomes extraídos inteligentemente.")
 
         if self.lista_inbox.count() > 0:
             self.lista_inbox.setCurrentRow(0)
             self.selecionar_documento(self.lista_inbox.item(0))
-
     # ==========================================
     # SALVAMENTO FINAL
+    # ==========================================
+# ==========================================
+    # SALVAMENTO FINAL (CORRIGIDO OS UNDERLINES)
     # ==========================================
     def salvar_e_arquivar(self):
         if not self.arquivo_selecionado: return
@@ -527,6 +536,7 @@ class TelaScanner(QWidget):
             pass
 
         if processo:
+            # Mantém underscore apenas no nome da pasta para o sistema organizar melhor
             nome_pasta_destino = f"Proc_{processo.id:03d}_{processo.nome_cliente.replace(' ', '_').upper()}"
             pasta_destino = os.path.join(pasta_base_cartorio, nome_pasta_destino)
             tipo_no_banco = "Documento Digitalizado"
@@ -536,12 +546,14 @@ class TelaScanner(QWidget):
 
         os.makedirs(pasta_destino, exist_ok=True)
 
-        nome_arquivo_seguro = nome_doc.replace(" ", "_").replace("—", "-")
+        # CORREÇÃO AQUI: Tira apenas caracteres proibidos do Windows, MAS MANTÉM OS ESPAÇOS!
+        nome_arquivo_seguro = re.sub(r'[\\/*?:"<>|]', "", nome_doc)
         caminho_pdf_final = os.path.join(pasta_destino, f"{nome_arquivo_seguro}.pdf")
 
         contador = 1
         while os.path.exists(caminho_pdf_final):
-            caminho_pdf_final = os.path.join(pasta_destino, f"{nome_arquivo_seguro}_pg{contador}.pdf")
+            # Se houver repetido, adiciona número separado por espaço (ex: FULANO 1.pdf)
+            caminho_pdf_final = os.path.join(pasta_destino, f"{nome_arquivo_seguro} {contador}.pdf")
             contador += 1
 
         try:
@@ -568,7 +580,8 @@ class TelaScanner(QWidget):
             if processo:
                 from database.crud import adicionar_documento
                 db = SessionLocal()
-                adicionar_documento(db, processo.id, f"{nome_doc}.pdf", tipo_no_banco, caminho_pdf_final)
+                # Salva no banco de dados com espaços normais
+                adicionar_documento(db, processo.id, f"{nome_arquivo_seguro}.pdf", tipo_no_banco, caminho_pdf_final)
                 db.close()
 
             self.arquivos_na_fila.remove(self.arquivo_selecionado)

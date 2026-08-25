@@ -3,31 +3,33 @@ import sys
 from flask import Flask, jsonify, render_template, request
 from werkzeug.serving import make_server
 
+# Função inteligente que descobre exatamente onde o .exe está salvo
+def obter_pasta_base():
+    if getattr(sys, 'frozen', False):
+        # Se estiver rodando como .exe, pega a pasta real do executável
+        return os.path.dirname(sys.executable)
+    else:
+        # Se estiver rodando no código fonte (.py), pega a raiz do projeto
+        return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-# Função para o PyInstaller achar a pasta templates quando virar .exe
-def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        # Aponta para a raiz onde está o main.py
-        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    return os.path.join(base_path, relative_path)
+PASTA_BASE = obter_pasta_base()
 
-
-template_dir = resource_path("templates")
+# Aponta para a pasta templates que você colou do lado do .exe
+template_dir = os.path.join(PASTA_BASE, "templates")
 app = Flask(__name__, template_folder=template_dir)
 
-UPLOAD_FOLDER = resource_path("documentos_recebidos")
+# Garante que as fotos também vão cair do lado do .exe
+UPLOAD_FOLDER = os.path.join(PASTA_BASE, "documentos_recebidos")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # PIN de segurança para o celular
 PIN_CARTORIO = "1234"
 
-
 @app.route("/")
 def index():
     return render_template("scanner.html")
 
+# (O resto do arquivo a partir do @app.route("/upload") continua igual...)
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -41,7 +43,7 @@ def upload():
     arquivo = request.files["imagem"]
 
     # Pega o nome que o usuário digitou no celular
-    nome_personalizado = request.form.get("nome", "doc_digitalizado")
+    nome_personalizado = request.form.get("nome", "doc_digitalizado").strip().upper()
 
     # Mantém a extensão como .jpg
     extensao = os.path.splitext(arquivo.filename)[1]
