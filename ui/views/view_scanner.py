@@ -2,15 +2,20 @@ import os
 import re
 import fitz  # PyMuPDF
 import asyncio
+import threading
+import shutil
 from datetime import datetime
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QFrame, QListWidget, QListWidgetItem,
                              QComboBox, QLineEdit, QMessageBox, QScrollArea)
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QCursor
 from database.conexao import SessionLocal
 from database.modelos import Processo
 from rapidfuzz import fuzz
+
+# Import do nosso servidor Flask com a função de LIGAR e PARAR
+from core.servidor_mobile import iniciar_flask, parar_flask
 
 # Bibliotecas do Windows Native OCR (Motor Oficial da Microsoft)
 from winsdk.windows.media.ocr import OcrEngine
@@ -25,6 +30,11 @@ class TelaScanner(QWidget):
         self.arquivo_selecionado = None
         self.processos_ativos_cache = []
 
+        # Variáveis de controle do Celular
+        self.servidor_ligado = False
+        self.timer_mobile = QTimer()
+        self.timer_mobile.timeout.connect(self.puxar_fotos_do_celular)
+
         self.setStyleSheet("""
             QListWidget { background-color: #0B0E14; border: 1px solid #1E2532; border-radius: 8px; color: white; padding: 5px; outline: none; font-size: 13px; }
             QListWidget::item { padding: 12px; border-bottom: 1px solid #1E2532; }
@@ -38,10 +48,9 @@ class TelaScanner(QWidget):
 
         # --- CABEÇALHO ---
         layout_topo = QVBoxLayout()
-        lbl_titulo = QLabel("🖨️ Central de Digitalização e OCR Lote (Canon DR-C240)")
+        lbl_titulo = QLabel("🖨️ Central de Digitalização e OCR Lote (Canon & Mobile)")
         lbl_titulo.setStyleSheet("font-size: 24px; font-weight: bold; color: white;")
-        lbl_sub = QLabel(
-            "Digitalize o lote inteiro pelo alimentador. O sistema extrai os nomes lendo as linhas e vincula automaticamente.")
+        lbl_sub = QLabel("Digitalize via alimentador ou celular. Nomes extraídos limpos e com espaçamento padrão.")
         lbl_sub.setStyleSheet("font-size: 13px; color: #8A92A6; margin-bottom: 15px;")
         layout_topo.addWidget(lbl_titulo)
         layout_topo.addWidget(lbl_sub)
@@ -55,26 +64,38 @@ class TelaScanner(QWidget):
         painel_inbox.setStyleSheet("background-color: #11151F; border-radius: 12px; border: 1px solid #1E2532;")
         layout_inbox = QVBoxLayout(painel_inbox)
 
-        lbl_inbox = QLabel("📥 Caixa de Entrada (Scanner)")
+        lbl_inbox = QLabel("📥 Caixa de Entrada")
         lbl_inbox.setStyleSheet("font-size: 16px; font-weight: bold; border: none;")
         layout_inbox.addWidget(lbl_inbox)
 
         box_botoes_scan = QHBoxLayout()
-        btn_scan = QPushButton("Escanear Lote")
+        btn_scan = QPushButton("🖨️ Escanear Lote")
         btn_scan.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_scan.setStyleSheet(
             "background-color: #8E44AD; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
         btn_scan.clicked.connect(self.acionar_scanner_fisico)
+
+        self.btn_mobile = QPushButton("📱 Ligar Celular")
+        self.btn_mobile.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_mobile.setStyleSheet(
+            "background-color: #2980B9; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
+        self.btn_mobile.clicked.connect(self.toggle_servidor)
+
+        box_botoes_scan.addWidget(btn_scan)
+        box_botoes_scan.addWidget(self.btn_mobile)
+        layout_inbox.addLayout(box_botoes_scan)
 
         btn_processar_fila = QPushButton("🧠 Processar Fila (OCR)")
         btn_processar_fila.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_processar_fila.setStyleSheet(
             "background-color: #E67E22; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
         btn_processar_fila.clicked.connect(self.processar_fila_ocr)
+        layout_inbox.addWidget(btn_processar_fila)
 
-        box_botoes_scan.addWidget(btn_scan)
-        box_botoes_scan.addWidget(btn_processar_fila)
-        layout_inbox.addLayout(box_botoes_scan)
+        self.lbl_status_mobile = QLabel("")
+        self.lbl_status_mobile.setStyleSheet("color: #8A92A6; font-size: 11px; font-weight: bold;")
+        self.lbl_status_mobile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout_inbox.addWidget(self.lbl_status_mobile)
 
         self.lista_inbox = QListWidget()
         self.lista_inbox.itemClicked.connect(self.selecionar_documento)
@@ -92,7 +113,7 @@ class TelaScanner(QWidget):
 
         layout_ocr.addWidget(QLabel("Novo Nome do Arquivo:"))
         self.inp_nome_doc = QLineEdit()
-        self.inp_nome_doc.setPlaceholderText("Ex: CERTIDAO_DE_CASAMENTO_ADAILTON_E_SEVERINA")
+        self.inp_nome_doc.setPlaceholderText("Ex: CERTIDÃO DE CASAMENTO - MARIA SILVA E JOÃO SOUZA")
         layout_ocr.addWidget(self.inp_nome_doc)
 
         layout_ocr.addWidget(QLabel("Vincular ao Processo (Se Ativo):"))
@@ -136,6 +157,69 @@ class TelaScanner(QWidget):
         layout_corpo.addWidget(painel_preview, 4)
         layout_principal.addLayout(layout_corpo)
 
+    # ==========================================
+    # LÓGICA DE INTEGRAÇÃO COM O CELULAR
+    # ==========================================
+    def toggle_servidor(self):
+        if not self.servidor_ligado:
+            self.thread_servidor = threading.Thread(target=iniciar_flask, daemon=True)
+            self.thread_servidor.start()
+
+            self.timer_mobile.start(2000)
+            self.servidor_ligado = True
+
+            self.btn_mobile.setText("📱 Desativar Celular")
+            self.btn_mobile.setStyleSheet(
+                "background-color: #E74C3C; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
+            self.lbl_status_mobile.setText("Sincronizando via rede (Porta 5000)...")
+            self.lbl_status_mobile.setStyleSheet("color: #2ECC71; font-size: 11px; font-weight: bold;")
+        else:
+            self.timer_mobile.stop()
+            parar_flask()  # Desliga o servidor Flask
+            self.servidor_ligado = False
+
+            self.btn_mobile.setText("📱 Ligar Celular")
+            self.btn_mobile.setStyleSheet(
+                "background-color: #2980B9; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
+            self.lbl_status_mobile.setText("Celular desativado.")
+            self.lbl_status_mobile.setStyleSheet("color: #8A92A6; font-size: 11px; font-weight: bold;")
+
+    def puxar_fotos_do_celular(self):
+        pasta_recebidos = os.path.join(os.getcwd(), "documentos_recebidos")
+        pasta_temp = os.path.join(os.getcwd(), "temp_scanner")
+        os.makedirs(pasta_recebidos, exist_ok=True)
+        os.makedirs(pasta_temp, exist_ok=True)
+
+        arquivos_na_pasta = [f for f in os.listdir(pasta_recebidos) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+
+        if arquivos_na_pasta:
+            novos = False
+            for arq in arquivos_na_pasta:
+                caminho_origem = os.path.join(pasta_recebidos, arq)
+                nome_arq_seguro = f"Mobile_{int(datetime.now().timestamp())}_{arq}"
+                caminho_destino = os.path.join(pasta_temp, nome_arq_seguro)
+
+                try:
+                    shutil.move(caminho_origem, caminho_destino)
+                    # Pega apenas o que o cara digitou no app sem a extensão
+                    nome_limpo = arq.rsplit('.', 1)[0]
+
+                    self.arquivos_na_fila.append({
+                        "caminho": caminho_destino,
+                        "nome_sugerido": nome_limpo,
+                        "origem": "mobile",
+                        "ocr_feito": False,
+                        "processo_index": 0
+                    })
+                    novos = True
+                except Exception:
+                    pass
+            if novos:
+                self.atualizar_lista_inbox()
+
+    # ==========================================
+    # EVENTOS BÁSICOS
+    # ==========================================
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             if self.arquivo_selecionado:
@@ -156,8 +240,51 @@ class TelaScanner(QWidget):
             self.combo_processos.addItem(texto, p)
             self.processos_ativos_cache.append(p)
 
+    def atualizar_lista_inbox(self):
+        self.lista_inbox.clear()
+        for item_data in self.arquivos_na_fila:
+            icone = "✅" if item_data["ocr_feito"] else "⏳"
+            item = QListWidgetItem(f"{icone} {item_data['nome_sugerido']}")
+            item.setData(Qt.ItemDataRole.UserRole, item_data)
+            self.lista_inbox.addItem(item)
+
+    def selecionar_documento(self, item):
+        item_data = item.data(Qt.ItemDataRole.UserRole)
+        self.arquivo_selecionado = item_data
+        self.inp_nome_doc.setText(item_data["nome_sugerido"])
+        self.combo_processos.setCurrentIndex(item_data["processo_index"])
+
+        if "texto_ocr" in item_data:
+            amostra = item_data["texto_ocr"][:200] + "..."
+            nome_fisgado = item_data.get("nome_extraido", "")
+            if nome_fisgado:
+                amostra = f"🎯 [NOME EXTRAÍDO DO PAPEL: {nome_fisgado}]\n\n" + amostra
+
+            self.txt_ocr_preview.setText(amostra)
+            if "ERRO" in item_data["texto_ocr"] or "FALHA" in item_data["texto_ocr"]:
+                self.txt_ocr_preview.setStyleSheet(
+                    "color: #E74C3C; font-size: 11px; font-family: Consolas; border: 1px dashed #E74C3C; padding: 10px; border-radius: 4px;")
+            else:
+                self.txt_ocr_preview.setStyleSheet(
+                    "color: #2ECC71; font-size: 11px; font-family: Consolas; border: 1px dashed #27AE60; padding: 10px; border-radius: 4px;")
+        else:
+            self.txt_ocr_preview.setText("Clique em 'Processar Fila' para ler o texto.")
+            self.txt_ocr_preview.setStyleSheet(
+                "color: #8A92A6; font-size: 11px; font-family: Consolas; border: 1px dashed #2C364C; padding: 10px; border-radius: 4px;")
+
+        try:
+            import fitz
+            doc = fitz.open(item_data["caminho"])
+            page = doc[0]
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
+            self.lbl_imagem_preview.setPixmap(QPixmap.fromImage(img))
+            self.lbl_imagem_preview.setScaledContents(True)
+        except:
+            self.lbl_imagem_preview.setText("Erro ao carregar visualização.")
+
     # ==========================================
-    # MOTOR CANON COM LOOP DE ALIMENTADOR (ADF)
+    # LÓGICA DO SCANNER FÍSICO
     # ==========================================
     def acionar_scanner_fisico(self):
         try:
@@ -193,11 +320,11 @@ class TelaScanner(QWidget):
                 except:
                     pass
 
-            set_config(6146, 1);
-            set_config(6147, 300);
+            set_config(6146, 1)
+            set_config(6147, 300)
             set_config(6148, 300)
-            set_config(3098, 1);
-            set_config(6151, 2480);
+            set_config(3098, 1)
+            set_config(6151, 2480)
             set_config(6152, 3508)
 
             cd = win32com.client.Dispatch("WIA.CommonDialog")
@@ -216,9 +343,13 @@ class TelaScanner(QWidget):
                     if os.path.exists(caminho_completo): os.remove(caminho_completo)
                     imagem.SaveFile(caminho_completo)
 
-                    self.arquivos_na_fila.append(
-                        {"caminho": caminho_completo, "nome_sugerido": nome_arq, "ocr_feito": False,
-                         "processo_index": 0})
+                    self.arquivos_na_fila.append({
+                        "caminho": caminho_completo,
+                        "nome_sugerido": nome_arq,
+                        "origem": "canon",
+                        "ocr_feito": False,
+                        "processo_index": 0
+                    })
                     paginas_lidas += 1
 
                 except Exception as ex:
@@ -232,7 +363,7 @@ class TelaScanner(QWidget):
 
             if paginas_lidas > 0:
                 QMessageBox.information(self, "Sucesso",
-                                        f"Digitalização em lote concluída!\n{paginas_lidas} página(s) digitalizada(s).")
+                                        f"Digitalização em lote concluída!\n{paginas_lidas} página(s).")
             else:
                 QMessageBox.warning(self, "Bandeja Vazia", "Não havia papel no alimentador do Canon.")
 
@@ -240,7 +371,7 @@ class TelaScanner(QWidget):
             QMessageBox.warning(self, "Aviso do Scanner", f"Falha de comunicação:\n{e}")
 
     # ==========================================
-    # CÉREBRO DE OCR NATIVO DA MICROSOFT
+    # LÓGICA DO OCR DA MICROSOFT
     # ==========================================
     async def extrair_texto_winsdk(self, caminho_imagem):
         try:
@@ -250,10 +381,9 @@ class TelaScanner(QWidget):
             software_bitmap = await decoder.get_software_bitmap_async()
             engine = OcrEngine.try_create_from_user_profile_languages()
             if not engine:
-                return "[ERRO: Motor de OCR do Windows não encontrado ou idioma não instalado]"
+                return "[ERRO: Motor de OCR do Windows não encontrado]"
             resultado = await engine.recognize_async(software_bitmap)
 
-            # A MÁGICA: Extrai linha por linha reconstruindo o papel real
             if resultado and resultado.lines:
                 texto_formatado = "\n".join([linha.text.strip() for linha in resultado.lines if linha.text.strip()])
                 return texto_formatado
@@ -261,6 +391,9 @@ class TelaScanner(QWidget):
         except Exception as e:
             return f"[ERRO INTERNO WINSDK: {str(e)}]"
 
+    # ==========================================
+    # INTELIGÊNCIA: ROTEAMENTO OCR
+    # ==========================================
     def processar_fila_ocr(self):
         if not self.arquivos_na_fila: return
         self.txt_ocr_preview.setText("Lendo lote inteiro... Aguarde.")
@@ -275,7 +408,6 @@ class TelaScanner(QWidget):
 
             if caminho.lower().endswith(".pdf"):
                 try:
-                    import fitz
                     doc = fitz.open(caminho)
                     pix = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2))
                     caminho_jpg = caminho.replace(".pdf", "_temp_ocr.jpg")
@@ -283,148 +415,99 @@ class TelaScanner(QWidget):
                 except:
                     pass
 
-            # EXECUTA A LEITURA DO WINDOWS
             try:
                 texto_extraido = asyncio.run(self.extrair_texto_winsdk(caminho_jpg))
             except Exception as e:
                 texto_extraido = f"[FALHA NA INTEGRAÇÃO: {str(e)}]"
 
-            # Mantém uma versão Multilinha e uma versão achatada
             texto_multilinha = texto_extraido.upper()
             linhas_reais = [linha.strip() for linha in texto_multilinha.split('\n') if linha.strip()]
             texto_limpo = " ".join(linhas_reais)
-
             item["texto_ocr"] = texto_limpo
 
-            # 1. IDENTIFICA O TIPO DE DOCUMENTO
-            padrao_titulo = r'(CERTIDÃO DE NASCIMENTO|CERTIDÃO DE CASAMENTO|CERTIDÃO DE ÓBITO|CERTIDAO DE NASCIMENTO|CERTIDAO DE CASAMENTO|CERTIDAO DE OBITO)'
-            busca_titulo = re.search(padrao_titulo, texto_limpo, re.IGNORECASE)
+            # Identifica de qual nome vamos buscar no banco
+            texto_busca_processo = item["nome_sugerido"].upper() if item.get("origem") == "mobile" else texto_limpo
 
-            tipo_doc = "DOCUMENTO"
-            if busca_titulo:
-                tipo_doc = busca_titulo.group(0).replace(" ", "_").upper()
-                tipo_doc = tipo_doc.replace("CERTIDÃO", "CERTIDAO").replace("ÓBITO", "OBITO")
-
-            # ==========================================
-            # 2. NOVO CAÇA-NOMES (LÓGICA POR LINHA E NÃO POR REGEX)
-            # ==========================================
-            nomes_encontrados = []
-
-            if "CASAMENTO" in tipo_doc:
-                for idx, linha in enumerate(linhas_reais):
-                    if "NJUGE" in linha or "CONTRATANTE" in linha:
-                        # Achou a palavra Cônjuges! Pega as duas linhas abaixo.
-                        if idx + 1 < len(linhas_reais): nomes_encontrados.append(linhas_reais[idx + 1])
-                        if idx + 2 < len(linhas_reais): nomes_encontrados.append(linhas_reais[idx + 2])
-                        break
-            else:
-                for idx, linha in enumerate(linhas_reais):
-                    # Impede que ele desça muito no papel e pegue o "Nome do Pai"
-                    if idx > 25: break
-
-                    if "NOME" in linha:
-                        # Às vezes o OCR lê tudo na mesma linha (ex: NOME: FULANO)
-                        if ":" in linha:
-                            possivel_nome = linha.split(":", 1)[1].strip()
-                            if len(possivel_nome) > 3:
-                                nomes_encontrados.append(possivel_nome)
-                                break
-                        # Se não, pega a linha de baixo
-                        if idx + 1 < len(linhas_reais):
-                            nomes_encontrados.append(linhas_reais[idx + 1])
-                        break
-
-            # Limpa as sujeiras do OCR, mas MANTÉM OS ACENTOS BRASILEIROS!
-            nomes_limpos = []
-            for n in nomes_encontrados:
-                n_limpo = re.sub(r'[^A-ZÁÀÂÃÉÈÍÏÓÒÔÕÚÇ ]', '', n).strip()
-                # Ignora palavras lixo ou a palavra "MATRICULA" se o papel subiu torto
-                if len(n_limpo) > 2 and "MATRICULA" not in n_limpo:
-                    nomes_limpos.append(n_limpo.replace(" ", "_"))
-
-            nome_extraido_pelo_sistema = "_E_".join(nomes_limpos)
-            item["nome_extraido"] = nome_extraido_pelo_sistema  # Salva para mostrar no preview
-
-            # ==========================================
-            # 3. ROTEAMENTO FINAL
-            # ==========================================
             melhor_score = 0
             melhor_index = 0
-            nome_final_arquivo = ""
 
+            # Procura vínculo no banco usando Partial Ratio (Ex: Acha "MARIA SILVA" dentro de "MARIA SILVA AVERBACAO")
             for i, proc in enumerate(self.processos_ativos_cache, start=1):
-                score = fuzz.partial_ratio(proc.nome_cliente.upper(), texto_limpo)
+                score = fuzz.partial_ratio(proc.nome_cliente.upper(), texto_busca_processo)
                 if score > 80 and score > melhor_score:
                     melhor_score = score
                     melhor_index = i
 
-            if nome_extraido_pelo_sistema:
-                nome_final_arquivo = nome_extraido_pelo_sistema
-            elif melhor_index > 0:
-                nome_final_arquivo = self.processos_ativos_cache[melhor_index - 1].nome_cliente.replace(" ",
-                                                                                                        "_").upper()
+            # Lógica para o CANON (Muda o nome do arquivo)
+            if item.get("origem") != "mobile":
+                padrao_titulo = r'(CERTIDÃO DE NASCIMENTO|CERTIDÃO DE CASAMENTO|CERTIDÃO DE ÓBITO|CERTIDAO DE NASCIMENTO|CERTIDAO DE CASAMENTO|CERTIDAO DE OBITO)'
+                busca_titulo = re.search(padrao_titulo, texto_limpo, re.IGNORECASE)
 
-            if nome_final_arquivo:
-                item["nome_sugerido"] = f"{tipo_doc}_{nome_final_arquivo}"
-            else:
-                item["nome_sugerido"] = f"{tipo_doc}_NAO_IDENTIFICADO"
+                tipo_doc = "DOCUMENTO"
+                if busca_titulo:
+                    tipo_doc = busca_titulo.group(0).upper()
+                    tipo_doc = tipo_doc.replace("CERTIDAO", "CERTIDÃO").replace("OBITO", "ÓBITO")
+
+                nomes_encontrados = []
+                if "CASAMENTO" in tipo_doc:
+                    for idx, linha in enumerate(linhas_reais):
+                        if "NJUGE" in linha or "CONTRATANTE" in linha:
+                            if idx + 1 < len(linhas_reais): nomes_encontrados.append(linhas_reais[idx + 1])
+                            if idx + 2 < len(linhas_reais): nomes_encontrados.append(linhas_reais[idx + 2])
+                            break
+                else:
+                    for idx, linha in enumerate(linhas_reais):
+                        if idx > 25: break
+                        if "NOME" in linha:
+                            if ":" in linha:
+                                possivel_nome = linha.split(":", 1)[1].strip()
+                                if len(possivel_nome) > 3:
+                                    nomes_encontrados.append(possivel_nome)
+                                    break
+                            if idx + 1 < len(linhas_reais):
+                                nomes_encontrados.append(linhas_reais[idx + 1])
+                            break
+
+                nomes_limpos = []
+                for n in nomes_encontrados:
+                    n_limpo = re.sub(r'[^A-ZÁÀÂÃÉÈÍÏÓÒÔÕÚÇ ]', '', n).strip()
+                    n_limpo = re.sub(r'\s+', ' ', n_limpo)
+                    if len(n_limpo) > 2 and "MATRICULA" not in n_limpo:
+                        nomes_limpos.append(n_limpo)
+
+                if "CASAMENTO" in tipo_doc and len(nomes_limpos) >= 2:
+                    nome_extraido_pelo_sistema = f"{nomes_limpos[0]} E {nomes_limpos[1]}"
+                elif len(nomes_limpos) > 0:
+                    nome_extraido_pelo_sistema = nomes_limpos[0]
+                else:
+                    nome_extraido_pelo_sistema = ""
+
+                item["nome_extraido"] = nome_extraido_pelo_sistema
+
+                if nome_extraido_pelo_sistema:
+                    nome_final_arquivo = nome_extraido_pelo_sistema
+                elif melhor_index > 0:
+                    nome_final_arquivo = self.processos_ativos_cache[melhor_index - 1].nome_cliente.upper()
+                else:
+                    nome_final_arquivo = "NAO IDENTIFICADO"
+
+                item["nome_sugerido"] = f"{tipo_doc} - {nome_final_arquivo}"
+
+            # Se a origem foi "mobile", o nome_sugerido continua intacto (Ex: "MARIA SILVA AVERBACAO")
 
             item["processo_index"] = melhor_index
             item["ocr_feito"] = True
 
         self.atualizar_lista_inbox()
-        self.txt_ocr_preview.setText("Lote processado! Nomes extraídos. Clique para arquivar.")
+        self.txt_ocr_preview.setText("Lote processado! Nomes formatados e vínculos realizados.")
 
         if self.lista_inbox.count() > 0:
             self.lista_inbox.setCurrentRow(0)
             self.selecionar_documento(self.lista_inbox.item(0))
 
-    def atualizar_lista_inbox(self):
-        self.lista_inbox.clear()
-        for item_data in self.arquivos_na_fila:
-            icone = "✅" if item_data["ocr_feito"] else "⏳"
-            item = QListWidgetItem(f"{icone} {item_data['nome_sugerido']}")
-            item.setData(Qt.ItemDataRole.UserRole, item_data)
-            self.lista_inbox.addItem(item)
-
-    def selecionar_documento(self, item):
-        item_data = item.data(Qt.ItemDataRole.UserRole)
-        self.arquivo_selecionado = item_data
-
-        self.inp_nome_doc.setText(item_data["nome_sugerido"])
-        self.combo_processos.setCurrentIndex(item_data["processo_index"])
-
-        if "texto_ocr" in item_data:
-            amostra = item_data["texto_ocr"][:200] + "..."
-
-            # RAIO-X: Mostra na tela o nome que o sistema fisgou!
-            nome_fisgado = item_data.get("nome_extraido", "")
-            if nome_fisgado:
-                amostra = f"🎯 [NOME EXTRAÍDO DO PAPEL: {nome_fisgado.replace('_', ' ')}]\n\n" + amostra
-
-            self.txt_ocr_preview.setText(amostra)
-            if "ERRO" in item_data["texto_ocr"] or "FALHA" in item_data["texto_ocr"]:
-                self.txt_ocr_preview.setStyleSheet(
-                    "color: #E74C3C; font-size: 11px; font-family: Consolas; border: 1px dashed #E74C3C; padding: 10px; border-radius: 4px;")
-            else:
-                self.txt_ocr_preview.setStyleSheet(
-                    "color: #2ECC71; font-size: 11px; font-family: Consolas; border: 1px dashed #27AE60; padding: 10px; border-radius: 4px;")
-        else:
-            self.txt_ocr_preview.setText("Clique em 'Processar Fila' para ler o texto.")
-            self.txt_ocr_preview.setStyleSheet(
-                "color: #8A92A6; font-size: 11px; font-family: Consolas; border: 1px dashed #2C364C; padding: 10px; border-radius: 4px;")
-
-        try:
-            import fitz
-            doc = fitz.open(item_data["caminho"])
-            page = doc[0]
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
-            self.lbl_imagem_preview.setPixmap(QPixmap.fromImage(img))
-            self.lbl_imagem_preview.setScaledContents(True)
-        except:
-            self.lbl_imagem_preview.setText("Erro ao carregar visualização.")
-
+    # ==========================================
+    # SALVAMENTO FINAL
+    # ==========================================
     def salvar_e_arquivar(self):
         if not self.arquivo_selecionado: return
 
@@ -453,10 +536,12 @@ class TelaScanner(QWidget):
 
         os.makedirs(pasta_destino, exist_ok=True)
 
-        caminho_pdf_final = os.path.join(pasta_destino, f"{nome_doc}.pdf")
+        nome_arquivo_seguro = nome_doc.replace(" ", "_").replace("—", "-")
+        caminho_pdf_final = os.path.join(pasta_destino, f"{nome_arquivo_seguro}.pdf")
+
         contador = 1
         while os.path.exists(caminho_pdf_final):
-            caminho_pdf_final = os.path.join(pasta_destino, f"{nome_doc}_pg{contador}.pdf")
+            caminho_pdf_final = os.path.join(pasta_destino, f"{nome_arquivo_seguro}_pg{contador}.pdf")
             contador += 1
 
         try:
@@ -483,8 +568,7 @@ class TelaScanner(QWidget):
             if processo:
                 from database.crud import adicionar_documento
                 db = SessionLocal()
-                adicionar_documento(db, processo.id, os.path.basename(caminho_pdf_final), tipo_no_banco,
-                                    caminho_pdf_final)
+                adicionar_documento(db, processo.id, f"{nome_doc}.pdf", tipo_no_banco, caminho_pdf_final)
                 db.close()
 
             self.arquivos_na_fila.remove(self.arquivo_selecionado)

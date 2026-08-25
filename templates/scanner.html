@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scanner Cartório</title>
+    <!-- Importa o visual e o motor da ferramenta de Recorte -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <style>
+        body { background: #121212; color: white; text-align: center; font-family: sans-serif; margin: 0; padding: 10px; }
+        video, img { max-width: 100%; border-radius: 8px; }
+        .controles { margin-top: 15px; }
+        button { padding: 12px; margin: 5px; font-size: 16px; border-radius: 8px; border: none; font-weight: bold; }
+        #btn-capturar { background: #4CAF50; color: white; width: 90%; padding: 20px; font-size: 20px; }
+        .btn-acao { background: #FF9800; color: white; }
+        #btn-enviar { background: #2196F3; color: white; width: 90%; display: none; margin-top: 10px; }
+        input { padding: 12px; font-size: 16px; width: 85%; margin-top: 10px; display: none; text-align: center; }
+        #area-edicao { display: none; max-height: 60vh; }
+    </style>
+</head>
+<body>
+    <h3 style="margin-top:5px;">Scanner ERP</h3>
+
+    <!-- Câmera ao vivo -->
+    <video id="camera" autoplay playsinline></video>
+
+    <!-- Imagem congelada para edição -->
+    <div id="area-edicao">
+        <img id="foto-capturada">
+    </div>
+
+    <div class="controles">
+        <button id="btn-capturar">📸 Capturar Documento</button>
+        <button id="btn-girar" class="btn-acao" style="display:none;">🔄 Girar 90º</button>
+        <button id="btn-refazer" class="btn-acao" style="display:none; background: #f44336;">❌ Cancelar</button>
+    </div>
+
+    <input type="text" id="nome-arquivo" placeholder="Nome do arquivo...">
+    <button id="btn-enviar">📤 Enviar Recortado</button>
+
+    <script>
+        const video = document.getElementById('camera');
+        const img = document.getElementById('foto-capturada');
+        const areaEdicao = document.getElementById('area-edicao');
+        const btnCapturar = document.getElementById('btn-capturar');
+        const btnGirar = document.getElementById('btn-girar');
+        const btnRefazer = document.getElementById('btn-refazer');
+        const btnEnviar = document.getElementById('btn-enviar');
+        const inputNome = document.getElementById('nome-arquivo');
+
+        let stream;
+        let cropper;
+
+        // Inicia a câmera traseira
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(s => { stream = s; video.srcObject = stream; })
+            .catch(err => alert("Erro na câmera: " + err));
+
+        // Tira a foto
+        btnCapturar.onclick = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+
+            img.src = canvas.toDataURL('image/jpeg');
+            video.style.display = 'none';
+            btnCapturar.style.display = 'none';
+            areaEdicao.style.display = 'block';
+            btnGirar.style.display = 'inline-block';
+            btnRefazer.style.display = 'inline-block';
+            inputNome.style.display = 'inline-block';
+            btnEnviar.style.display = 'inline-block';
+
+            // Ativa a ferramenta de recorte livre
+            cropper = new Cropper(img, { viewMode: 1, autoCropArea: 0.8 });
+        };
+
+        // Gira a imagem
+        btnGirar.onclick = () => { cropper.rotate(90); };
+
+        // Cancela e volta pra câmera
+        btnRefazer.onclick = () => {
+            cropper.destroy();
+            areaEdicao.style.display = 'none';
+            btnGirar.style.display = 'none';
+            btnRefazer.style.display = 'none';
+            inputNome.style.display = 'none';
+            btnEnviar.style.display = 'none';
+            video.style.display = 'block';
+            btnCapturar.style.display = 'block';
+        };
+
+        // Envia para o PC
+        btnEnviar.onclick = () => {
+            // Pega apenas a área que o usuário recortou
+            cropper.getCroppedCanvas().toBlob(blob => {
+                let formData = new FormData();
+                formData.append('imagem', blob, 'doc.jpg');
+                formData.append('nome', inputNome.value || 'documento');
+
+                btnEnviar.innerText = "⏳ Enviando...";
+
+                fetch('/upload', {
+                    method: 'POST',
+                    headers: { 'X-Pin': '1234' }, // Lembre-se que o PIN tem que bater com o do Python
+                    body: formData
+                }).then(res => res.json()).then(data => {
+                    alert('Salvo no ERP!');
+                    location.reload(); // Atualiza para a próxima captura
+                }).catch(err => {
+                    alert('Erro ao enviar.');
+                    btnEnviar.innerText = "📤 Enviar Recortado";
+                });
+            }, 'image/jpeg', 0.8);
+        };
+    </script>
+</body>
+</html>
