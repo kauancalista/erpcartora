@@ -1,14 +1,16 @@
 import os
+import json
+from datetime import datetime
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QScrollArea, QGridLayout, QPushButton,
                              QComboBox, QDialog, QLineEdit, QFormLayout, QSizePolicy)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCursor
-
 from database.conexao import SessionLocal
-from database.modelos import Tarefa, Processo, Casamento
+from database.modelos import Tarefa, Casamento, Processo
 from database.crud import criar_tarefa
 from ui.componentes import LabelStatus, notificar
+from ui.dialogs.form_detalhes_processo import DialogDetalhesProcesso  # A Mágica de Abrir a Ficha!
 
 
 # ==========================================
@@ -72,12 +74,22 @@ class DialogNovaTarefa(QDialog):
             notificar(self, "A descrição é obrigatória!", "erro")
             return
 
+        prazo_str = self.inp_data.text().strip()
+        try:
+            if prazo_str:
+                prazo_obj = datetime.strptime(prazo_str, "%d/%m/%Y")
+            else:
+                prazo_obj = datetime.now()
+        except ValueError:
+            notificar(self, "Data inválida! Use o formato DD/MM/AAAA", "erro")
+            return
+
         db = SessionLocal()
         criar_tarefa(
             db,
             descricao=self.inp_desc.text().strip(),
             responsavel=self.inp_resp.text().strip() or "Equipe",
-            data_limite=self.inp_data.text().strip() or "Sem prazo"
+            data_limite=prazo_obj
         )
         db.close()
         self.accept()
@@ -110,7 +122,6 @@ class TelaTarefas(QWidget):
         lbl_sub.setStyleSheet("font-size: 13px; color: #8A92A6;")
         box_titulos.addWidget(lbl_titulo)
         box_titulos.addWidget(lbl_sub)
-
         box_topo.addLayout(box_titulos)
         box_topo.addStretch()
         layout_esq.addLayout(box_topo)
@@ -123,7 +134,7 @@ class TelaTarefas(QWidget):
         self.container_cards = QWidget()
         self.container_cards.setStyleSheet("background-color: transparent;")
         self.layout_cards = QVBoxLayout(self.container_cards)
-        self.layout_cards.setContentsMargins(0, 0, 10, 0)  # Margem pra barra de rolagem não morder o card
+        self.layout_cards.setContentsMargins(0, 0, 10, 0)
         self.layout_cards.setSpacing(15)
         self.layout_cards.setAlignment(Qt.AlignmentFlag.AlignTop)
 
@@ -137,7 +148,6 @@ class TelaTarefas(QWidget):
         layout_dir.setContentsMargins(25, 30, 25, 30)
         layout_dir.setSpacing(20)
 
-        # Ações Rápidas
         lbl_act = QLabel("Ações Rápidas")
         lbl_act.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
         layout_dir.addWidget(lbl_act)
@@ -164,7 +174,6 @@ class TelaTarefas(QWidget):
         box_filtros.setStyleSheet(
             "background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px; margin-top: 20px;")
         layout_f = QVBoxLayout(box_filtros)
-
         lbl_f_tit = QLabel("Filtrar Visão")
         lbl_f_tit.setStyleSheet("font-size: 14px; font-weight: bold; color: white; border: none; margin-bottom: 5px;")
         layout_f.addWidget(lbl_f_tit)
@@ -191,104 +200,124 @@ class TelaTarefas(QWidget):
 
         layout_dir.addStretch()
 
-        # Junta tudo (60 / 40)
         layout_principal.addWidget(self.painel_esq, 6)
         layout_principal.addWidget(self.painel_dir, 4)
 
         self.carregar_dados_hub()
 
     # ==========================================
-    # CÉREBRO: PUXANDO DAS 3 TABELAS
+    # CÉREBRO: PUXANDO DO BANCO DE DADOS
     # ==========================================
+        # ==========================================
+        # CÉREBRO: PUXANDO DO BANCO DE DADOS
+        # ==========================================
     def carregar_dados_hub(self):
-        import json  # Garante a leitura do dicionário do banco
         db = SessionLocal()
-
-        # 1. Puxa Processos (Que não estão concluídos)
-        processos = db.query(Processo).filter(Processo.status.notin_(["Concluído", "Arquivado"])).all()
-
-        # 2. Puxa todos os Casamentos Ativos para analisar o Checklist
+         # 1. Puxa Tarefas reais (Manuais e de Processos)
+        tarefas = db.query(Tarefa).filter(Tarefa.status != "Concluída").all()
+            # 2. Puxa Casamentos Ativos para analisar o Checklist
         casamentos = db.query(Casamento).filter(Casamento.status != "Arquivado").all()
 
-        # 3. Puxa Tarefas Manuais
-        tarefas_manuais = db.query(Tarefa).filter(Tarefa.status != "Concluída").all()
+         # ATENÇÃO: O db.close() foi retirado daqui para manter a conexão viva!
 
-        db.close()
         self.lista_todas_tarefas.clear()
-
         count_proc, count_cas, count_man = 0, 0, 0
 
-        # Formata Processos para o formato do Card
-        for p in processos:
-            data_str = p.data_entrada if isinstance(p.data_entrada, str) else p.data_entrada.strftime("%d/%m/%Y")
-            self.lista_todas_tarefas.append({
-                "origem": "Processo", "cor": "#27AE60", "icone": "📄",
-                "titulo": f"Andamento de Processo: {p.nome_cliente}",
-                "data_texto": f"Entrega: {data_str}", "info_extra": p.tipo_servico,
-                "status": p.status
-            })
-            count_proc += 1
+            # Formata as Tarefas Reais
+        for t in tarefas:
+            try:
+                data_str = t.data_criacao.strftime("%d/%m/%Y")
+            except:
+                data_str = str(t.data_criacao).split()[0] if t.data_criacao else "Sem prazo"
 
-        # LÓGICA REFINADA: Casamentos (Só aciona se faltar a Certidão específica)
+             # A INTELIGÊNCIA ESTÁ AQUI: Tem ID de Processo?
+            if t.processo_id:
+                    # É uma tarefa de Processo
+                    # Como o banco ainda está aberto, ele consegue ir lá e ler os dados do cliente!
+                nome_cliente = t.processo.nome_cliente if t.processo else "Desconhecido"
+                servico = t.processo.tipo_servico if t.processo else ""
+
+                self.lista_todas_tarefas.append({
+                    "tarefa_id": t.id,
+                    "processo_id": t.processo_id,
+                    "casamento_id": None,
+                    "origem": "Processo",
+                    "cor": "#27AE60",
+                    "icone": "📄",
+                    "titulo": t.descricao,
+                    "data_texto": f"Prazo: {data_str}",
+                    "info_extra": f"Cliente: {nome_cliente} | {servico}",
+                    "status": t.status
+                })
+                count_proc += 1
+            else:
+                    # É uma Tarefa Manual (Sem processo)
+                self.lista_todas_tarefas.append({
+                    "tarefa_id": t.id,
+                    "processo_id": None,
+                    "casamento_id": None,
+                    "origem": "Manual",
+                    "cor": "#F39C12",
+                    "icone": "📌",
+                    "titulo": t.descricao,
+                    "data_texto": f"Prazo: {data_str}",
+                    "info_extra": f"Responsável: {t.responsavel}",
+                    "status": t.status
+                })
+                count_man += 1
+
+            # Formata Pendências de Casamento
         for c in casamentos:
             try:
-                # Transforma a string do banco de volta num Dicionário Python
                 docs_dict = json.loads(c.docs_entregues) if c.docs_entregues else {}
             except:
                 docs_dict = {}
 
-            # Pega o status exato das duas certidões (Se não achar, considera False/Faltando)
             cert_noivo = docs_dict.get("Certidão Noivo (Até 90 dias)", False)
             cert_noiva = docs_dict.get("Certidão Noiva (Até 90 dias)", False)
 
-            # Se AO MENOS UMA estiver faltando (False), cria a Tarefa
             if not cert_noivo or not cert_noiva:
                 faltando_cert = []
                 if not cert_noivo: faltando_cert.append("Noivo")
                 if not cert_noiva: faltando_cert.append("Noiva")
 
-                # Se faltar dos dois, vira "Noivo e Noiva"
                 txt_faltando = " e ".join(faltando_cert)
-
                 data_str = c.data_celebracao.strip() if c.data_celebracao else "A definir"
+
                 self.lista_todas_tarefas.append({
-                    "origem": "Casamento", "cor": "#8E44AD", "icone": "💍",
+                    "tarefa_id": None,
+                    "processo_id": None,
+                    "casamento_id": c.id,
+                    "origem": "Casamento",
+                    "cor": "#8E44AD",
+                    "icone": "💍",
                     "titulo": f"Pendência 2ª via Certidão ({txt_faltando}) - {c.nome_noivo} e {c.nome_noiva}",
-                    "data_texto": f"Celebração: {data_str}", "info_extra": f"Protocolo: {c.protocolo}",
+                    "data_texto": f"Celebração: {data_str}",
+                    "info_extra": f"Protocolo: {c.protocolo}",
                     "status": "Aguardando Certidão"
                 })
                 count_cas += 1
 
-        # Formata Tarefas Manuais
-        for t in tarefas_manuais:
-            data_str = t.data_criacao if isinstance(t.data_criacao, str) else t.data_criacao.strftime("%d/%m/%Y")
-            self.lista_todas_tarefas.append({
-                "origem": "Manual", "cor": "#F39C12", "icone": "📋",
-                "titulo": t.descricao,
-                "data_texto": f"Prazo: {data_str}", "info_extra": f"Responsável: {t.responsavel}",
-                "status": t.status
-            })
-            count_man += 1
-
         self.lbl_kpi_proc.setText(str(count_proc))
         self.lbl_kpi_cas.setText(str(count_cas))
         self.lbl_kpi_manuais.setText(str(count_man))
-
         self.renderizar_cards()
+
+            # AGORA SIM! Com todos os dados já montados e lidos, fechamos o banco de dados.
+        db.close()
+
     # ==========================================
     # RENDERIZAÇÃO DOS CARDS
     # ==========================================
     def renderizar_cards(self):
-        # Limpa tudo
         while self.layout_cards.count():
             item = self.layout_cards.takeAt(0)
             if item.widget(): item.widget().deleteLater()
 
         filtro = self.cb_filtro.currentText()
-
         cards_exibidos = 0
+
         for t in self.lista_todas_tarefas:
-            # Aplica o filtro
             if filtro == "Mostrar só Processos" and t["origem"] != "Processo": continue
             if filtro == "Mostrar só Casamentos" and t["origem"] != "Casamento": continue
             if filtro == "Mostrar só Manuais" and t["origem"] != "Manual": continue
@@ -297,7 +326,7 @@ class TelaTarefas(QWidget):
             cards_exibidos += 1
 
         if cards_exibidos == 0:
-            lbl_vazio = QLabel("\n\n✨ Tudo limpo!\nNenhuma tarefa ou pendência no momento.")
+            lbl_vazio = QLabel("\n\n🎉 Tudo limpo!\nNenhuma tarefa ou pendência no momento.")
             lbl_vazio.setStyleSheet("color: #8A92A6; font-size: 16px;")
             lbl_vazio.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.layout_cards.addWidget(lbl_vazio)
@@ -313,13 +342,12 @@ class TelaTarefas(QWidget):
         layout_card = QHBoxLayout(card)
         layout_card.setContentsMargins(15, 15, 15, 15)
 
-        # Bloco de Textos (Esquerda)
+        # Bloco de Textos
         box_textos = QVBoxLayout()
-
         box_tags = QHBoxLayout()
+
         lbl_tipo = QLabel(f"{t['icone']} Origem: {t['origem']}")
         lbl_tipo.setStyleSheet(f"color: {t['cor']}; font-size: 11px; font-weight: bold; border: none;")
-
         badge_status = LabelStatus(t['status'])
 
         box_tags.addWidget(lbl_tipo)
@@ -338,22 +366,68 @@ class TelaTarefas(QWidget):
 
         layout_card.addLayout(box_textos, 8)
 
-        # Botão Clicável (Direita) - Exatamente como você pediu!
-        btn_acessar = QPushButton("Abrir Ficha ❯")
+        # =======================================================
+        # O BOTÃO MÁGICO: Muda de acordo com o tipo da tarefa
+        # =======================================================
+        btn_acessar = QPushButton()
         btn_acessar.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn_acessar.setStyleSheet(
-            "background-color: #11151F; color: #E2E8F0; font-weight: bold; padding: 15px 20px; border: 1px solid #1E2532; border-radius: 8px;")
-        btn_acessar.clicked.connect(lambda: notificar(self, f"Acessando ficha: {t['origem']}", "info"))
+
+        if t["processo_id"]:
+            # Se for processo, abre a ficha!
+            btn_acessar.setText("Abrir Ficha >")
+            btn_acessar.setStyleSheet(
+                "background-color: #11151F; color: #E2E8F0; font-weight: bold; padding: 15px 20px; border: 1px solid #1E2532; border-radius: 8px;")
+            btn_acessar.clicked.connect(lambda checked, pid=t["processo_id"]: self.abrir_ficha_do_processo(pid))
+
+        elif t["casamento_id"]:
+            # Se for casamento, orienta ir na aba
+            btn_acessar.setText("Ir para Casamentos >")
+            btn_acessar.setStyleSheet(
+                "background-color: #11151F; color: #E2E8F0; font-weight: bold; padding: 15px 20px; border: 1px solid #1E2532; border-radius: 8px;")
+            btn_acessar.clicked.connect(
+                lambda checked: notificar(self, "Abra a aba 'Casamentos' no menu lateral para resolver.", "info"))
+
+        else:
+            # Se for Manual, permite concluir e dar baixa na hora!
+            btn_acessar.setText("Concluir Tarefa ✓")
+            btn_acessar.setStyleSheet(
+                "background-color: #27AE60; color: white; font-weight: bold; padding: 15px 20px; border: none; border-radius: 8px;")
+            btn_acessar.clicked.connect(lambda checked, tid=t["tarefa_id"]: self.concluir_tarefa_manual(tid))
 
         layout_card.addWidget(btn_acessar, 2)
-
         self.layout_cards.addWidget(card)
+
+    # ==========================================
+    # AÇÕES DOS BOTÕES (ABRIR FICHA E CONCLUIR)
+    # ==========================================
+    def abrir_ficha_do_processo(self, processo_id):
+        """Abre a janela de detalhes real e sincroniza ao fechar"""
+        janela = DialogDetalhesProcesso(processo_id)
+        if janela.exec() == QDialog.DialogCode.Accepted:
+            try:
+                self.window().atualizar_todas_telas()
+            except:
+                self.carregar_dados_hub()
+
+    def concluir_tarefa_manual(self, tarefa_id):
+        """Dá baixa numa tarefa manual direto pelo botão verde"""
+        db = SessionLocal()
+        tarefa = db.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
+        if tarefa:
+            tarefa.status = "Concluída"
+            db.commit()
+        db.close()
+
+        notificar(self, "Tarefa concluída com sucesso!", "sucesso")
+        try:
+            self.window().atualizar_todas_telas()
+        except:
+            self.carregar_dados_hub()
 
     def abrir_dialog_novo(self):
         dialog = DialogNovaTarefa(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             notificar(self, "Tarefa manual adicionada com sucesso!", "sucesso")
-            # Avisa o sistema inteiro que uma tarefa nova nasceu!
             try:
                 self.window().atualizar_todas_telas()
             except:

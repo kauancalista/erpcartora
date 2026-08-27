@@ -680,42 +680,34 @@ class TelaCasamentos(QWidget):
     # ==========================================
     # IMPRESSÃO DO REQUERIMENTO
     # ==========================================
+        # ==========================================
+        # IMPRESSÃO DO REQUERIMENTO
+        # ==========================================
     def imprimir_requerimento(self):
-        # Gera o HTML do formulário de casamento para preenchimento a mão
-        html = """
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: black; line-height: 1.6;">
-            <h2 style="text-align: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 30px;">REQUERIMENTO DE HABILITAÇÃO DE CASAMENTO</h2>
 
-            <p style="font-size: 16px;">Os contraentes abaixo assinados requerem a habilitação para o casamento civil, apresentando os documentos exigidos pelo Art. 1.525 do Código Civil Brasileiro.</p>
-            <br>
 
-            <p style="font-size: 18px;"><b>Nome do Contraente 1:</b> ______________________________________________________________</p>
-            <br>
-            <p style="font-size: 18px;"><b>Nome do Contraente 2:</b> ______________________________________________________________</p>
-            <br><br>
+        # Procura o PDF na pasta 'modelos' na raiz do sistema
+        caminho_pdf = os.path.join(os.getcwd(), "templates", "form_casamento_modelo.pdf")
 
-            <p style="font-size: 18px;"><b>Data pretendida para celebração:</b> ____/____/20____ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>Horário:</b> ____:____</p>
-            <br><br>
+        # Caso o arquivo tenha sido colocado dentro da pasta 'assets/modelos'
+        if not os.path.exists(caminho_pdf):
+            caminho_pdf = os.path.join(os.getcwd(), "assets", "templates", "form_casamento_modelo.pdf")
 
-            <h3 style="margin-bottom: 15px;">Checklist de Documentos Anexos:</h3>
-            <ul style="list-style-type: none; padding-left: 0; font-size: 16px;">
-                <li style="margin-bottom: 10px;">( &nbsp;&nbsp; ) Certidões de Nascimento (atualizadas até 90 dias)</li>
-                <li style="margin-bottom: 10px;">( &nbsp;&nbsp; ) Documentos de Identidade (RG) e CPF</li>
-                <li style="margin-bottom: 10px;">( &nbsp;&nbsp; ) Comprovantes de Residência</li>
-                <li style="margin-bottom: 10px;">( &nbsp;&nbsp; ) Documentação das Testemunhas</li>
-            </ul>
-            <br><br><br><br>
+        # Trava de segurança: avisa se o arquivo PDF não estiver na pasta
+        if not os.path.exists(caminho_pdf):
+            QMessageBox.warning(self, "Arquivo Não Encontrado",
+                                f"O sistema não achou o formulário físico em:\n{caminho_pdf}\n\nVerifique se o nome do PDF está exatamente como 'form_casamento_modelo.pdf'.")
+            return
 
-            <table style="width: 100%; text-align: center; font-size: 16px;">
-                <tr>
-                    <td style="padding-right: 20px;">___________________________________________________<br>Assinatura Contraente 1</td>
-                    <td style="padding-left: 20px;">___________________________________________________<br>Assinatura Contraente 2</td>
-                </tr>
-            </table>
-        </div>
-        """
-        dialog = DialogImpressao(self, "Requerimento de Casamento (Formulário)", html)
-        dialog.exec()
+        try:
+            # Comando nativo do Windows: manda imprimir silenciosamente na impressora padrão
+            os.startfile(caminho_pdf, "print")
+
+            # Aproveitando o seu próprio sistema de notificação visual!
+            notificar(self, "Formulário enviado para a impressora padrão!", "sucesso")
+        except Exception as e:
+            QMessageBox.critical(self, "Erro na Impressora",
+                                    f"Não foi possível iniciar a impressão. Verifique se a impressora está ligada.\n\nErro: {str(e)}")
 
     # ==========================================
     # ARQUIVAMENTO E UTILITÁRIOS
