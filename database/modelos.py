@@ -16,6 +16,7 @@ class Processo(Base):
     tipo_servico = Column(String, nullable=False)
     status = Column(String, default="Aguardando Documento")
     data_entrada = Column(DateTime, default=datetime.now)
+    data_prazo = Column(DateTime, nullable=True)  # <--- NOVA GAVETA CRIADA AQUI!
     telefone_whatsapp = Column(String, nullable=True)
 
     # A MÁGICA: Liga o processo às suas tarefas e documentos.

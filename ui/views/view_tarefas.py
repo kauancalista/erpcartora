@@ -353,7 +353,11 @@ class TelaTarefas(QWidget):
         dialog = DialogNovaTarefa(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             notificar(self, "Tarefa manual adicionada com sucesso!", "sucesso")
-            self.carregar_dados_hub()  # Recarrega a tela lendo o banco de novo
+            # Avisa o sistema inteiro que uma tarefa nova nasceu!
+            try:
+                self.window().atualizar_todas_telas()
+            except:
+                self.carregar_dados_hub()
 
     def criar_kpi_card(self, titulo, label_valor, cor_destaque):
         card = QFrame()

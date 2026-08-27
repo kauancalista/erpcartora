@@ -4,12 +4,13 @@ from database.modelos import Processo, Documento, Tarefa, Casamento, Compromisso
 # ==========================================
 # C - CREATE (Criar / Inserir)
 # ==========================================
-def criar_processo(db: Session, nome_cliente: str, tipo_servico: str, cpf: str = None, telefone_whatsapp: str = None):
+def criar_processo(db: Session, nome_cliente: str, tipo_servico: str, cpf: str = None, telefone_whatsapp: str = None, data_prazo=None):
     novo_processo = Processo(
         nome_cliente=nome_cliente,
         cpf=cpf,
         tipo_servico=tipo_servico,
-        telefone_whatsapp=telefone_whatsapp
+        telefone_whatsapp=telefone_whatsapp,
+        data_prazo=data_prazo # <--- SALVANDO O PRAZO AQUI
         # status e data_entrada já são preenchidos automaticamente pelo modelo!
     )
     db.add(novo_processo)
@@ -77,12 +78,13 @@ def listar_documentos_do_processo(db: Session, processo_id: int):
 # ==========================================
 # MÓDULO: TAREFAS
 # ==========================================
-def criar_tarefa(db, descricao, responsavel, data_limite):
+def criar_tarefa(db, descricao, responsavel, data_limite, processo_id=None):
     nova = Tarefa(
         descricao=descricao,
         responsavel=responsavel,
         data_criacao=data_limite, # Usando o campo existente para guardar o limite
-        status="Pendente"
+        status="Pendente",
+        processo_id = processo_id
     )
     db.add(nova)
     db.commit()

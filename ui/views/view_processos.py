@@ -1,26 +1,23 @@
 import os
+from datetime import datetime
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QLineEdit, QFrame, QScrollArea,
                              QComboBox, QDialog, QMessageBox)
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QCursor, QIcon
-
 from database.conexao import SessionLocal
 from database.crud import listar_todos_processos, atualizar_status_processo, listar_documentos_do_processo
 from ui.dialogs.form_novo_processo import DialogNovoProcesso
 from ui.dialogs.form_detalhes_processo import DialogDetalhesProcesso
 from ui.componentes import VisualizadorDocumento
 
-# =========================================================
-# TELA FLUTUANTE DE MIGRAÇÃO (Lógica Original Mantida)
-# =========================================================
+
 class DialogMigracao(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Migrar Processo")
         self.setFixedSize(320, 260)
         self.setStyleSheet("background-color: #11151F; color: white; border-radius: 12px;")
-
         self.destino_escolhido = None
 
         layout = QVBoxLayout(self)
@@ -31,19 +28,19 @@ class DialogMigracao(QDialog):
         lbl.setStyleSheet("font-size: 15px; font-weight: bold; margin-bottom: 15px;")
         layout.addWidget(lbl)
 
-        btn_entregue = QPushButton("✅ Entregar ao Cliente")
+        btn_entregue = QPushButton("🟢 Entregar ao Cliente")
         btn_entregue.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn_entregue.setStyleSheet(
             "background-color: #27AE60; padding: 12px; font-size: 13px; border-radius: 6px; font-weight: bold;")
         btn_entregue.clicked.connect(lambda: self.escolher("Entregue"))
 
-        btn_cras = QPushButton("🏢 Enviar para o CRAS")
+        btn_cras = QPushButton("🟣 Enviar para o CRAS")
         btn_cras.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn_cras.setStyleSheet(
             "background-color: #8E44AD; padding: 12px; font-size: 13px; border-radius: 6px; font-weight: bold;")
         btn_cras.clicked.connect(lambda: self.escolher("CRAS"))
 
-        btn_arquivado = QPushButton("🗄️ Arquivar no Cartório")
+        btn_arquivado = QPushButton("📁 Arquivar no Cartório")
         btn_arquivado.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn_arquivado.setStyleSheet(
             "background-color: #2C364C; padding: 12px; font-size: 13px; border-radius: 6px; font-weight: bold;")
@@ -58,13 +55,9 @@ class DialogMigracao(QDialog):
         self.accept()
 
 
-# =========================================================
-# A TELA PRINCIPAL (Layout em Blocos + Lógica Avançada)
-# =========================================================
 class TelaProcessos(QWidget):
     def __init__(self):
         super().__init__()
-
         self.todos_processos = []
         self.carregando = False
 
@@ -75,7 +68,7 @@ class TelaProcessos(QWidget):
         # --- CABEÇALHO ---
         layout_topo = QHBoxLayout()
         box_titulo = QVBoxLayout()
-        lbl_titulo = QLabel("📁 Central de Processos e Documentos")
+        lbl_titulo = QLabel("📂 Central de Processos e Documentos")
         lbl_titulo.setStyleSheet("font-size: 24px; font-weight: bold; color: white;")
         lbl_sub = QLabel("Gerencie os processos, visualize anexos rápidos e altere o status.")
         lbl_sub.setStyleSheet("font-size: 13px; color: #8A92A6;")
@@ -142,21 +135,17 @@ class TelaProcessos(QWidget):
         self.scroll.setWidget(self.container_blocos)
         layout_principal.addWidget(self.scroll)
 
-        # Inicia o carregamento
         self.carregar_dados()
 
-    # ==========================================
-    # LÓGICA DE DADOS E CONSTRUÇÃO DOS BLOCOS
-    # ==========================================
     def abrir_formulario(self):
         janela = DialogNovoProcesso()
         if janela.exec() == QDialog.DialogCode.Accepted:
-            self.carregar_dados()
+            self.sincronizar_erp()  # <-- Gatilho Global!
 
     def abrir_detalhes(self, processo_id):
         janela_detalhes = DialogDetalhesProcesso(processo_id)
         if janela_detalhes.exec() == QDialog.DialogCode.Accepted:
-            self.carregar_dados()
+            self.sincronizar_erp()  # <-- Gatilho Global!
 
     def carregar_dados(self):
         db = SessionLocal()
@@ -171,7 +160,6 @@ class TelaProcessos(QWidget):
 
         processos_filtrados = []
 
-        # Aplica os filtros da lógica original
         for p in self.todos_processos:
             protocolo_str = f"2026.08.{p.id:04d}"
 
@@ -181,6 +169,7 @@ class TelaProcessos(QWidget):
                 continue
 
             is_ativo = p.status not in ["Arquivado", "CRAS", "Entregue"]
+
             if filtro_aba == "Exibir: Ativos" and not is_ativo: continue
             if filtro_aba == "Exibir: Entregues" and p.status != "Entregue": continue
             if filtro_aba == "Exibir: CRAS" and p.status != "CRAS": continue
@@ -192,11 +181,11 @@ class TelaProcessos(QWidget):
         self.carregando = False
 
     def renderizar_blocos(self, processos_filtrados):
-        # Limpa os blocos velhos da tela
-        for i in reversed(range(self.layout_blocos.count())):
-            widget_item = self.layout_blocos.itemAt(i)
-            if widget_item.widget():
-                widget_item.widget().setParent(None)
+        # O BUG ESTAVA AQUI! Limpando os widgets e os espaços (stretches) corretamente:
+        while self.layout_blocos.count():
+            item = self.layout_blocos.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
         if not processos_filtrados:
             lbl_vazio = QLabel("Nenhum processo encontrado com estes filtros.")
@@ -212,7 +201,6 @@ class TelaProcessos(QWidget):
                 QFrame { background-color: #0B0E14; border: 1px solid #1E2532; border-radius: 10px; }
                 QFrame:hover { border: 1px solid #2962FF; background-color: #11151F; }
             """)
-
             lay_bloco = QHBoxLayout(bloco)
             lay_bloco.setContentsMargins(20, 15, 20, 15)
 
@@ -221,12 +209,20 @@ class TelaProcessos(QWidget):
             lbl_nome = QLabel(p.nome_cliente)
             lbl_nome.setStyleSheet(
                 "color: white; font-weight: bold; font-size: 15px; border: none; background: transparent;")
-            lbl_detalhes = QLabel(f"Proc. 2026.08.{p.id:04d}   |   CPF: {p.cpf or '-'}")
+
+            try:
+                data_formatada = p.data_entrada.strftime("%d/%m/%Y")
+            except:
+                data_formatada = str(p.data_entrada).split()[0]
+
+            prazo_str = p.data_prazo.strftime("%d/%m/%Y") if p.data_prazo else "Sem prazo"
+
+            lbl_detalhes = QLabel(f"Proc. 2026.08.{p.id:04d}   |   Entrada: {data_formatada}   |   Prazo: {prazo_str}   |   CPF: {p.cpf or '-'}")
             lbl_detalhes.setStyleSheet("color: #8A92A6; font-size: 11px; border: none; background: transparent;")
+
             info_lay.addWidget(lbl_nome)
             info_lay.addWidget(lbl_detalhes)
             lay_bloco.addLayout(info_lay)
-
             lay_bloco.addStretch()
 
             # ---> Documentos Anexados (Centro)
@@ -236,6 +232,7 @@ class TelaProcessos(QWidget):
 
             docs_lay = QHBoxLayout()
             docs_lay.setSpacing(5)
+
             if docs:
                 for doc in docs:
                     extensao = doc.caminho_arquivo.lower().split('.')[-1]
@@ -262,6 +259,7 @@ class TelaProcessos(QWidget):
                 opcoes = [p.status, "Completo", "Entregue", "CRAS", "Arquivado", "Devolução (Retornar)"]
             else:
                 opcoes = [p.status, "Aguardando Documento", "Falta par", "Revisar", "Pendente", "Completo"]
+
             opcoes_limpas = list(dict.fromkeys(opcoes))
 
             combo_status = QComboBox()
@@ -272,11 +270,9 @@ class TelaProcessos(QWidget):
                 QComboBox { background-color: #1A2133; color: white; border: 1px solid #2C364C; border-radius: 6px; padding: 5px 15px; font-weight: bold; }
                 QComboBox::drop-down { border: none; }
             """)
-            # Conecta a lógica de migração
             combo_status.currentTextChanged.connect(
                 lambda texto, pid=p.id, combo=combo_status: self.mudar_status_logica(pid, texto, combo))
             lay_bloco.addWidget(combo_status)
-
             lay_bloco.addSpacing(15)
 
             # ---> Botão Abrir Ficha
@@ -289,11 +285,9 @@ class TelaProcessos(QWidget):
 
             self.layout_blocos.addWidget(bloco)
 
+        # Adiciona apenas UMA mola no final
         self.layout_blocos.addStretch()
 
-    # ==========================================
-    # LÓGICA DE STATUS E MIGRAÇÃO
-    # ==========================================
     def mudar_status_logica(self, processo_id, novo_status, combo):
         if self.carregando: return
 
@@ -321,12 +315,18 @@ class TelaProcessos(QWidget):
         db = SessionLocal()
         atualizar_status_processo(db, processo_id, status_final)
         db.close()
-        QTimer.singleShot(1, self.carregar_dados)
+        QTimer.singleShot(1, self.sincronizar_erp)  # <-- Gatilho Global!
 
     def abrir_documento(self, caminho):
         if os.path.exists(caminho):
-            # Chama o componente global que criamos!
             visualizador = VisualizadorDocumento(caminho, self)
             visualizador.exec()
         else:
             QMessageBox.warning(self, "Erro", "Arquivo não encontrado fisicamente na pasta.")
+
+    def sincronizar_erp(self):
+        """Chama a MainWindow para atualizar o sistema inteiro de uma vez"""
+        try:
+            self.window().atualizar_todas_telas()
+        except:
+            self.carregar_dados()  # Fallback de segurança

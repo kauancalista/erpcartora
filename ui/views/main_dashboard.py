@@ -158,13 +158,33 @@ class MainWindow(QMainWindow):
         """)
         return btn
 
+        # ========================================================
+        # MOTOR PROFISSIONAL DE SINCRONIZAÇÃO GLOBAL
+        # ========================================================
+    def atualizar_todas_telas(self):
+        """Varre todas as abas escondidas e atualiza os dados em segundo plano!"""
+        for i in range(self.stack.count()):
+            tela = self.stack.widget(i)
+            if hasattr(tela, 'carregar_dados_reais'):
+                tela.carregar_dados_reais()  # Dashboard
+            elif hasattr(tela, 'carregar_dados'):
+                tela.carregar_dados()  # Processos
+            elif hasattr(tela, 'carregar_dados_hub'):
+                tela.carregar_dados_hub()  # Tarefas
+            elif hasattr(tela, 'carregar_dados_do_banco'):
+                tela.carregar_dados_do_banco()  # Casamentos
+            elif hasattr(tela, 'carregar_dados_globais'):
+                tela.carregar_dados_globais()  # Agenda
+                if hasattr(tela, 'renderizar_calendario'):
+                    tela.renderizar_calendario()
+
     def mudar_tela(self, indice):
         self.stack.setCurrentIndex(indice)
 
-        # Atualiza a cor azul de qual aba está selecionada
+        # O gatilho gambiarra sumiu daqui! Agora é só mudança visual de cor:
         botoes = [self.btn_dashboard, self.btn_processos, self.btn_tarefas,
-                  self.btn_requerimentos, self.btn_relatorios, self.btn_agenda,
-                  self.btn_config, self.btn_casamentos, self.btn_scanner]
+                    self.btn_requerimentos, self.btn_relatorios, self.btn_agenda,
+                    self.btn_config, self.btn_casamentos, self.btn_scanner]
 
         for i, btn in enumerate(botoes):
             btn.setChecked(i == indice)
