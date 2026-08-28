@@ -11,3 +11,4 @@ banco_cartorio.db
 teste_banco.py
 /assets/icones/
 /assets/templates
+conexao.py
