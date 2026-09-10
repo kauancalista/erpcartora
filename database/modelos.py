@@ -18,6 +18,7 @@ class Processo(Base):
     data_entrada = Column(DateTime, default=datetime.now)
     data_prazo = Column(DateTime, nullable=True)  # <--- NOVA GAVETA CRIADA AQUI!
     telefone_whatsapp = Column(String, nullable=True)
+    origem_solicitacao = Column(String, default="BALCÃO")
 
     # A MÁGICA: Liga o processo às suas tarefas e documentos.
     # cascade="all, delete-orphan" significa que se apagar a Maria, apaga os PDFs dela do banco junto.

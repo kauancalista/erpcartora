@@ -94,16 +94,18 @@ class DialogNovoCompromisso(QDialog):
             return
 
         db = SessionLocal()
-        criar_compromisso(
-            db,
-            titulo=self.inp_titulo.text().strip(),
-            data=self.inp_data.text().strip(),
-            hora=self.inp_hora.text().strip(),
-            tipo=self.cb_tipo.currentText(),
-            lembrete=self.cb_lembrete.currentText(),
-            link=self.inp_link.text().strip()
-        )
-        db.close()
+        try:
+            criar_compromisso(
+                db,
+                titulo=self.inp_titulo.text().strip(),
+                data=self.inp_data.text().strip(),
+                hora=self.inp_hora.text().strip(),
+                tipo=self.cb_tipo.currentText(),
+                lembrete=self.cb_lembrete.currentText(),
+                link=self.inp_link.text().strip()
+            )
+        finally:
+            db.close()
         self.accept()
 
 
@@ -276,11 +278,13 @@ class TelaAgenda(QWidget):
 
     def carregar_dados_globais(self):
         db = SessionLocal()
-        casamentos = db.query(Casamento).all()
-        processos = db.query(Processo).all()
-        tarefas = db.query(Tarefa).all()
-        compromissos = db.query(Compromisso).all()  # <--- Puxa a nova tabela!
-        db.close()
+        try:
+            casamentos = db.query(Casamento).all()
+            processos = db.query(Processo).all()
+            tarefas = db.query(Tarefa).all()
+            compromissos = db.query(Compromisso).all()  # <--- Puxa a nova tabela!
+        finally:
+            db.close()
 
         self.dicionario_eventos.clear()
 

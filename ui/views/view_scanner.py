@@ -22,6 +22,8 @@ from winsdk.windows.media.ocr import OcrEngine
 from winsdk.windows.storage import StorageFile
 from winsdk.windows.graphics.imaging import BitmapDecoder
 
+from utils_caminhos import obter_diretorio_base
+
 
 class TelaScanner(QWidget):
     def __init__(self):
@@ -205,8 +207,8 @@ class TelaScanner(QWidget):
             self.lbl_status_mobile.setStyleSheet("color: #8A92A6; font-size: 11px; font-weight: bold;")
 
     def puxar_fotos_do_celular(self):
-        pasta_recebidos = os.path.join(os.getcwd(), "documentos_recebidos")
-        pasta_temp = os.path.join(os.getcwd(), "temp_scanner")
+        pasta_recebidos = os.path.join(obter_diretorio_base(), "documentos_recebidos")
+        pasta_temp = os.path.join(obter_diretorio_base(), "temp_scanner")
         os.makedirs(pasta_recebidos, exist_ok=True)
         os.makedirs(pasta_temp, exist_ok=True)
 
@@ -348,7 +350,7 @@ class TelaScanner(QWidget):
             set_config(6152, 3508)
 
             cd = win32com.client.Dispatch("WIA.CommonDialog")
-            pasta_temp = os.path.join(os.getcwd(), "temp_scanner")
+            pasta_temp = os.path.join(obter_diretorio_base(), "temp_scanner")
             os.makedirs(pasta_temp, exist_ok=True)
 
             paginas_lidas = 0
@@ -527,9 +529,9 @@ class TelaScanner(QWidget):
 
         processo = self.combo_processos.currentData()
         import json
-        pasta_base_cartorio = os.path.join(os.getcwd(), "Arquivos_Cartorio")
+        pasta_base_cartorio = os.path.join(obter_diretorio_base(), "Arquivos_Cartorio")
         try:
-            with open(os.path.join(os.getcwd(), "config", "app_config.json"), "r", encoding="utf-8") as f:
+            with open(os.path.join(obter_diretorio_base(), "config", "app_config.json"), "r", encoding="utf-8") as f:
                 cfg = json.load(f)
                 if cfg.get("pasta_processos"): pasta_base_cartorio = cfg["pasta_processos"]
         except:

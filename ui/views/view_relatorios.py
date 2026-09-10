@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt, pyqtSignal, QObject, QModelIndex, QDir
 from PyQt6.QtGui import QCursor, QFileSystemModel
 
+from utils_caminhos import obter_diretorio_base
+
 
 class LogSignal(QObject):
     update_log = pyqtSignal(str)
@@ -21,17 +23,17 @@ class TelaRelatorios(QWidget):
 
         self.caminho_planilha = ""
         self.caminho_pasta_selecionada = ""
-        self.pasta_saida = os.path.join(os.getcwd(), "Relatorios_Gerados")
+        self.pasta_saida = os.path.join(obter_diretorio_base(), "Relatorios_Gerados")
         os.makedirs(self.pasta_saida, exist_ok=True)
 
         # =====================================================================
         # ⚠️ DEFINA AQUI O CAMINHO DA SUA PASTA RAIZ DO FERC
         # Exemplo: r"C:\Cartorio\FERC" ou r"D:\Documentos\Relatorios_Corregedoria"
         # =====================================================================
-        self.diretorio_raiz = os.path.join(os.getcwd(), "Arquivos_Cartorio")  # Fallback padrão
+        self.diretorio_raiz = os.path.join(obter_diretorio_base(), "Arquivos_Cartorio")  # Fallback padrão
 
         try:
-            caminho_config = os.path.join(os.getcwd(), "config", "app_config.json")
+            caminho_config = os.path.join(obter_diretorio_base(), "config", "app_config.json")
             if os.path.exists(caminho_config):
                 with open(caminho_config, "r", encoding="utf-8") as f:
                     cfg = json.load(f)

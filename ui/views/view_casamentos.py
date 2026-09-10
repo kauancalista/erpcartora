@@ -1,20 +1,21 @@
+import json
 import os
 import random
 from datetime import datetime
-import json
+
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
                              QPushButton, QScrollArea, QGridLayout, QComboBox,
                              QStackedWidget, QMessageBox, QGraphicsOpacityEffect,
-                             QLineEdit, QFormLayout, QCheckBox, QRadioButton)
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QColor, QCursor, QFont
+                             QLineEdit, QCheckBox, QRadioButton)
 
 from database.conexao import SessionLocal
 from database.crud import (listar_todos_casamentos, criar_casamento,
                            atualizar_casamento_interativo, atualizar_status_casamento)
 from ui.componentes import BarraPesquisa, LabelStatus, wrap_transparente, obter_estilo_status, notificar
-from ui.modulo_impressao import DialogImpressao  # <-- O MOTOR DE IMPRESSÃO AQUI!
+from utils_caminhos import obter_diretorio_base
 
 
 class TelaCasamentos(QWidget):
@@ -59,7 +60,6 @@ class TelaCasamentos(QWidget):
         # ==========================================
         self.painel_dir = QFrame()
         self.painel_dir.setStyleSheet("background-color: #11151F; border-left: 1px solid #1E2532;")
-        # Removido setMinimumWidth para não quebrar a responsividade!
 
         self.efeito_opacidade_dir = QGraphicsOpacityEffect(self.painel_dir)
         self.painel_dir.setGraphicsEffect(self.efeito_opacidade_dir)
@@ -101,7 +101,6 @@ class TelaCasamentos(QWidget):
         lbl_titulo = QLabel("Casamentos")
         lbl_titulo.setStyleSheet("font-size: 26px; font-weight: bold; color: white;")
 
-        # --- NOVO BOTÃO DE IMPRIMIR AQUI ---
         btn_imprimir_form = QPushButton("🖨️ Formulário em Branco")
         btn_imprimir_form.setStyleSheet(
             "background-color: #151A27; color: white; font-weight: bold; padding: 10px 18px; border-radius: 6px; border: 1px solid #1E2532;")
@@ -225,6 +224,7 @@ class TelaCasamentos(QWidget):
         self.inp_tel = QLineEdit()
         self.inp_tel.setPlaceholderText("(00) 00000-0000")
         self.inp_tel.setStyleSheet(estilo_input)
+        self.inp_tel.setInputMask("(00) 00000-0000;_")  # MÁSCARA TELEFONE ADICIONADA
 
         grid_nomes.addWidget(QLabel("Noivo:"), 0, 0)
         grid_nomes.addWidget(self.inp_noivo, 1, 0)
@@ -244,10 +244,12 @@ class TelaCasamentos(QWidget):
         self.inp_data = QLineEdit()
         self.inp_data.setPlaceholderText("DD/MM/AAAA")
         self.inp_data.setStyleSheet(estilo_input)
+        self.inp_data.setInputMask("00/00/0000;_")  # MÁSCARA DE DATA ADICIONADA
 
         self.inp_hora = QLineEdit()
         self.inp_hora.setPlaceholderText("HH:MM")
         self.inp_hora.setStyleSheet(estilo_input)
+        self.inp_hora.setInputMask("00:00;_")  # MÁSCARA DE HORA ADICIONADA
 
         grid_agenda.addWidget(QLabel("Data da Celebração:"), 0, 0)
         grid_agenda.addWidget(self.inp_data, 1, 0)
@@ -304,9 +306,19 @@ class TelaCasamentos(QWidget):
     # CÉREBRO E BANCO DE DADOS
     # ==========================================
     def salvar_requerimento(self):
-        if not self.inp_noivo.text() or not self.inp_noiva.text() or not self.inp_data.text():
+        # Removemos os caracteres da máscara para validar se o usuário digitou ou deixou vazio
+        data_digitada = self.inp_data.text().replace("/", "").strip()
+        hora_digitada = self.inp_hora.text().replace(":", "").strip()
+        tel_digitado = self.inp_tel.text().replace("(", "").replace(")", "").replace("-", "").strip()
+
+        if not self.inp_noivo.text() or not self.inp_noiva.text() or not data_digitada:
             QMessageBox.warning(self, "Atenção", "Preencha os nomes e a data da celebração!")
             return
+
+        # Recupera os textos de volta com a máscara para salvar bonito no banco
+        data_final = self.inp_data.text().strip()
+        hora_final = self.inp_hora.text().strip() if hora_digitada else ""
+        tel_final = self.inp_tel.text().strip() if tel_digitado else ""
 
         faltando = sum(1 for chk in self.checks_docs_iniciais if not chk.isChecked())
         entregues = {chk.text(): chk.isChecked() for chk in self.checks_docs_iniciais}
@@ -315,24 +327,27 @@ class TelaCasamentos(QWidget):
         protocolo_gerado = f"CAS-{datetime.now().year}-{id_aleatorio:04d}"
 
         db = SessionLocal()
-        criar_casamento(
-            db, protocolo=protocolo_gerado,
-            nome_noivo=self.inp_noivo.text().strip(),
-            nome_noiva=self.inp_noiva.text().strip(),
-            telefone=self.inp_tel.text().strip(),
-            data_entrada=datetime.now().strftime("%d/%m/%Y"),
-            data_celebracao=self.inp_data.text().strip(),
-            horario=self.inp_hora.text().strip(),
-            docs=json.dumps(entregues),
-            pendencias=faltando
-        )
-        db.close()
+        try:
+            criar_casamento(
+                db, protocolo=protocolo_gerado,
+                nome_noivo=self.inp_noivo.text().strip(),
+                nome_noiva=self.inp_noiva.text().strip(),
+                telefone=tel_final,
+                data_entrada=datetime.now().strftime("%d/%m/%Y"),
+                data_celebracao=data_final,
+                horario=hora_final,
+                docs=json.dumps(entregues),
+                pendencias=faltando
+            )
+        finally:
+            db.close()
+
         notificar(self, "Protocolo gerado com sucesso!", "sucesso")
 
-        self.inp_noivo.clear();
+        self.inp_noivo.clear()
         self.inp_noiva.clear()
-        self.inp_tel.clear();
-        self.inp_data.clear();
+        self.inp_tel.clear()
+        self.inp_data.clear()
         self.inp_hora.clear()
         for chk in self.checks_docs_iniciais: chk.setChecked(False)
 
@@ -340,10 +355,14 @@ class TelaCasamentos(QWidget):
         self.carregar_dados_do_banco()
         self.tabela.selectRow(0)
 
+        self.sincronizar_erp()  # <-- Gatilho acionado ao criar!
+
     def carregar_dados_do_banco(self):
         db = SessionLocal()
-        self.todos_casamentos = listar_todos_casamentos(db)
-        db.close()
+        try:
+            self.todos_casamentos = listar_todos_casamentos(db)
+        finally:
+            db.close()
 
         total = len(self.todos_casamentos)
         ativos = sum(1 for c in self.todos_casamentos if c.status not in ["Concluído (OK)", "Arquivado"])
@@ -429,7 +448,6 @@ class TelaCasamentos(QWidget):
         self.casamento_atual = c
         self.limpar_layout_interno(self.layout_dir)
 
-        # CABEÇALHO
         layout_header = QHBoxLayout()
         lbl_prot = QLabel(c.protocolo)
         lbl_prot.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
@@ -439,7 +457,6 @@ class TelaCasamentos(QWidget):
         layout_header.addStretch()
         self.layout_dir.addLayout(layout_header)
 
-        # AS ABAS (Agora todas ativas!)
         layout_abas = QHBoxLayout()
         abas = ["Geral", "Pagamentos", "Histórico"]
         self.botoes_abas = []
@@ -452,24 +469,20 @@ class TelaCasamentos(QWidget):
         layout_abas.addStretch()
         self.layout_dir.addLayout(layout_abas)
 
-        # CONTAINER DAS ABAS
         self.stack_abas = QStackedWidget()
 
-        # Página 1: GERAL
         page_geral = QWidget()
         layout_geral = QVBoxLayout(page_geral)
         layout_geral.setContentsMargins(0, 10, 0, 0)
         self.montar_aba_geral(layout_geral, c)
         self.stack_abas.addWidget(page_geral)
 
-        # Página 2: PAGAMENTOS
         page_pag = QWidget()
         layout_pag = QVBoxLayout(page_pag)
         layout_pag.setContentsMargins(0, 10, 0, 0)
         self.montar_aba_pagamentos(layout_pag, c)
         self.stack_abas.addWidget(page_pag)
 
-        # Página 3: HISTÓRICO
         page_hist = QWidget()
         layout_hist = QVBoxLayout(page_hist)
         layout_hist.setContentsMargins(0, 10, 0, 0)
@@ -508,7 +521,6 @@ class TelaCasamentos(QWidget):
         grid_info.addWidget(self.criar_bloco_info("🕒 Horário", hora), 1, 1)
         layout.addLayout(grid_info)
 
-        # Checkboxes (Checklist)
         card_docs = QFrame()
         card_docs.setStyleSheet(
             "background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px; margin-top: 15px;")
@@ -538,7 +550,6 @@ class TelaCasamentos(QWidget):
 
         layout.addWidget(card_docs)
 
-        # Ações Finais (Arquivar)
         if c.status == "Concluído (OK)":
             btn_arq = QPushButton("🗄️ Arquivar / Finalizar Processo")
             btn_arq.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -556,7 +567,6 @@ class TelaCasamentos(QWidget):
 
         layout.addStretch()
 
-
     def montar_aba_pagamentos(self, layout, c):
         lbl_pag = QLabel("Taxa do Processo e Pagamentos")
         lbl_pag.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
@@ -567,7 +577,6 @@ class TelaCasamentos(QWidget):
             "background-color: #151A27; border: 1px solid #1E2532; border-radius: 8px; padding: 10px;")
         layout_pag = QVBoxLayout(box_pag)
 
-        # Instanciamos os botões aqui, mas eles vão interagir com o "recalcular_tudo_e_salvar" igual antes
         self.radio_aguardando = QRadioButton("Aguardando Pagamento")
         self.radio_pago = QRadioButton("Pago")
         self.radio_isento = QRadioButton("Isento de Taxa")
@@ -612,7 +621,6 @@ class TelaCasamentos(QWidget):
         lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
         layout.addWidget(lbl)
 
-        # O Cérebro: Constrói uma Timeline baseada no status atual e datas
         historico = []
         historico.append(f"🟢 {c.data_entrada} - Entrada do Processo (Protocolo {c.protocolo})")
 
@@ -661,8 +669,11 @@ class TelaCasamentos(QWidget):
             novo_status = "Em Andamento"
 
         db = SessionLocal()
-        atualizar_casamento_interativo(db, self.casamento_atual.id, json.dumps(entregues), faltando, taxa, novo_status)
-        db.close()
+        try:
+            atualizar_casamento_interativo(db, self.casamento_atual.id, json.dumps(entregues), faltando, taxa,
+                                           novo_status)
+        finally:
+            db.close()
 
         self.badge_status_direita.setText(novo_status)
         self.badge_status_direita.setStyleSheet(obter_estilo_status(novo_status))
@@ -673,41 +684,31 @@ class TelaCasamentos(QWidget):
         if linha_selecionada >= 0: self.tabela.selectRow(linha_selecionada)
         self.tabela.blockSignals(False)
 
-        # Atualiza o histórico em tempo real se a aba estiver aberta
         if self.stack_abas.currentIndex() == 2:
             self.trocar_aba(2)
+
+        self.sincronizar_erp()  # <-- Gatilho acionado ao editar!
 
     # ==========================================
     # IMPRESSÃO DO REQUERIMENTO
     # ==========================================
-        # ==========================================
-        # IMPRESSÃO DO REQUERIMENTO
-        # ==========================================
     def imprimir_requerimento(self):
+        caminho_pdf = os.path.join(obter_diretorio_base(), "templates", "form_casamento_modelo.pdf")
 
-
-        # Procura o PDF na pasta 'modelos' na raiz do sistema
-        caminho_pdf = os.path.join(os.getcwd(), "templates", "form_casamento_modelo.pdf")
-
-        # Caso o arquivo tenha sido colocado dentro da pasta 'assets/modelos'
         if not os.path.exists(caminho_pdf):
-            caminho_pdf = os.path.join(os.getcwd(), "assets", "templates", "form_casamento_modelo.pdf")
+            caminho_pdf = os.path.join(obter_diretorio_base(), "assets", "templates", "form_casamento_modelo.pdf")
 
-        # Trava de segurança: avisa se o arquivo PDF não estiver na pasta
         if not os.path.exists(caminho_pdf):
             QMessageBox.warning(self, "Arquivo Não Encontrado",
                                 f"O sistema não achou o formulário físico em:\n{caminho_pdf}\n\nVerifique se o nome do PDF está exatamente como 'form_casamento_modelo.pdf'.")
             return
 
         try:
-            # Comando nativo do Windows: manda imprimir silenciosamente na impressora padrão
             os.startfile(caminho_pdf, "print")
-
-            # Aproveitando o seu próprio sistema de notificação visual!
             notificar(self, "Formulário enviado para a impressora padrão!", "sucesso")
         except Exception as e:
             QMessageBox.critical(self, "Erro na Impressora",
-                                    f"Não foi possível iniciar a impressão. Verifique se a impressora está ligada.\n\nErro: {str(e)}")
+                                 f"Não foi possível iniciar a impressão. Verifique se a impressora está ligada.\n\nErro: {str(e)}")
 
     # ==========================================
     # ARQUIVAMENTO E UTILITÁRIOS
@@ -717,19 +718,36 @@ class TelaCasamentos(QWidget):
                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if resp == QMessageBox.StandardButton.Yes:
             db = SessionLocal()
-            atualizar_status_casamento(db, self.casamento_atual.id, "Arquivado")
-            db.close()
+            try:
+                atualizar_status_casamento(db, self.casamento_atual.id, "Arquivado")
+            finally:
+                db.close()
+
             notificar(self, "Processo arquivado!", "sucesso")
             self.carregar_dados_do_banco()
             self.painel_dir.hide()
 
+            self.sincronizar_erp()  # <-- Gatilho acionado ao arquivar!
+
     def reativar_processo(self):
         db = SessionLocal()
-        atualizar_status_casamento(db, self.casamento_atual.id, "Concluído (OK)")
-        db.close()
+        try:
+            atualizar_status_casamento(db, self.casamento_atual.id, "Concluído (OK)")
+        finally:
+            db.close()
+
         notificar(self, "Processo reativado com sucesso.", "info")
         self.combo_filtro.setCurrentText("Exibir: Ativos")
         self.carregar_dados_do_banco()
+
+        self.sincronizar_erp()  # <-- Gatilho acionado ao reativar!
+
+    def sincronizar_erp(self):
+        try:
+            self.window().atualizar_todas_telas()
+        except Exception as e:
+            print(f"Erro ao sincronizar Casamentos: {e}")
+            self.carregar_dados_do_banco()
 
     def criar_kpi_card(self, titulo, label_valor, subtitulo, cor_destaque="#FFFFFF"):
         card = QFrame()

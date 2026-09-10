@@ -5,14 +5,16 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QMessageBox, QTextEdit, QScrollArea)
 from PyQt6.QtCore import Qt
 
+from utils_caminhos import obter_diretorio_base
+
 
 class TelaConfiguracoes(QWidget):
     def __init__(self):
         super().__init__()
 
         # Caminhos dos arquivos de configuração
-        self.caminho_config_app = os.path.join(os.getcwd(), "config", "app_config.json")
-        self.caminho_modelos = os.path.join(os.getcwd(), "config", "modelos_requerimentos.json")
+        self.caminho_config_app = os.path.join(obter_diretorio_base(), "config", "app_config.json")
+        self.caminho_modelos = os.path.join(obter_diretorio_base(), "config", "modelos_requerimentos.json")
 
         self.garantir_arquivos_existem()
 

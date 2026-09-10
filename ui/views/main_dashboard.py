@@ -161,22 +161,35 @@ class MainWindow(QMainWindow):
         # ========================================================
         # MOTOR PROFISSIONAL DE SINCRONIZAÇÃO GLOBAL
         # ========================================================
+
     def atualizar_todas_telas(self):
-        """Varre todas as abas escondidas e atualiza os dados em segundo plano!"""
+        """Varre todas as abas escondidas e atualiza os dados com isolamento de falhas!"""
         for i in range(self.stack.count()):
             tela = self.stack.widget(i)
-            if hasattr(tela, 'carregar_dados_reais'):
-                tela.carregar_dados_reais()  # Dashboard
-            elif hasattr(tela, 'carregar_dados'):
-                tela.carregar_dados()  # Processos
-            elif hasattr(tela, 'carregar_dados_hub'):
-                tela.carregar_dados_hub()  # Tarefas
-            elif hasattr(tela, 'carregar_dados_do_banco'):
-                tela.carregar_dados_do_banco()  # Casamentos
-            elif hasattr(tela, 'carregar_dados_globais'):
-                tela.carregar_dados_globais()  # Agenda
-                if hasattr(tela, 'renderizar_calendario'):
-                    tela.renderizar_calendario()
+
+            try:
+                if hasattr(tela, 'carregar_dados_reais'):
+                    tela.carregar_dados_reais()  # Dashboard
+
+                elif hasattr(tela, 'carregar_dados'):
+                    tela.carregar_dados()  # Processos
+
+                elif hasattr(tela, 'carregar_dados_hub'):
+                    tela.carregar_dados_hub()  # Tarefas
+
+                elif hasattr(tela, 'carregar_dados_do_banco'):
+                    tela.carregar_dados_do_banco()  # Casamentos
+
+                elif hasattr(tela, 'carregar_dados_globais'):
+                    tela.carregar_dados_globais()  # Agenda
+                    if hasattr(tela, 'renderizar_calendario'):
+                        tela.renderizar_calendario()
+                    if hasattr(tela, 'ao_clicar_data') and hasattr(tela, 'data_selecionada'):
+                        tela.ao_clicar_data(tela.data_selecionada)  # Atualiza a timeline da direita!
+
+            except Exception as e:
+                # O print te avisa lá no terminal (VS Code) qual aba exata está quebrando o código
+                print(f"Erro invisível evitado na tela índice {i}: {e}")
 
     def mudar_tela(self, indice):
         self.stack.setCurrentIndex(indice)

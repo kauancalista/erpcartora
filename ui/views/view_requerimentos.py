@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QTextEdit, QScrollArea, QCompleter)
 from PyQt6.QtCore import Qt
 from core.gerador_requerimentos import gerar_docx_requerimento
+from utils_caminhos import obter_diretorio_base
 
 
 class TelaRequerimentos(QWidget):
@@ -99,7 +100,7 @@ class TelaRequerimentos(QWidget):
 
     def carregar_json_config(self):
         """Lê as configurações direto do arquivo externo"""
-        caminho_json = os.path.join(os.getcwd(), "config", "modelos_requerimentos.json")
+        caminho_json = os.path.join(obter_diretorio_base(), "config", "modelos_requerimentos.json")
         try:
             with open(caminho_json, "r", encoding="utf-8") as file:
                 return json.load(file)

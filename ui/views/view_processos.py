@@ -149,8 +149,10 @@ class TelaProcessos(QWidget):
 
     def carregar_dados(self):
         db = SessionLocal()
-        self.todos_processos = listar_todos_processos(db)
-        db.close()
+        try:
+            self.todos_processos = listar_todos_processos(db)
+        finally:
+            db.close()
         self.filtrar_tabela()
 
     def filtrar_tabela(self):
@@ -217,7 +219,8 @@ class TelaProcessos(QWidget):
 
             prazo_str = p.data_prazo.strftime("%d/%m/%Y") if p.data_prazo else "Sem prazo"
 
-            lbl_detalhes = QLabel(f"Proc. 2026.08.{p.id:04d}   |   Entrada: {data_formatada}   |   Prazo: {prazo_str}   |   CPF: {p.cpf or '-'}")
+            origem = getattr(p, 'origem_solicitacao', 'BALCÃO')
+            lbl_detalhes = QLabel(f"Proc. 2026.08.{p.id:04d}   |   Origem: {origem}   |   Entrada: {data_formatada}   |   Prazo: {prazo_str}   |   CPF: {p.cpf or '-'}")
             lbl_detalhes.setStyleSheet("color: #8A92A6; font-size: 11px; border: none; background: transparent;")
 
             info_lay.addWidget(lbl_nome)
@@ -227,8 +230,10 @@ class TelaProcessos(QWidget):
 
             # ---> Documentos Anexados (Centro)
             db = SessionLocal()
-            docs = listar_documentos_do_processo(db, p.id)
-            db.close()
+            try:
+                docs = listar_documentos_do_processo(db, p.id)
+            finally:
+                db.close()
 
             docs_lay = QHBoxLayout()
             docs_lay.setSpacing(5)
@@ -313,8 +318,10 @@ class TelaProcessos(QWidget):
 
     def salvar_e_recarregar(self, processo_id, status_final):
         db = SessionLocal()
-        atualizar_status_processo(db, processo_id, status_final)
-        db.close()
+        try:
+            atualizar_status_processo(db, processo_id, status_final)
+        finally:
+            db.close()
         QTimer.singleShot(1, self.sincronizar_erp)  # <-- Gatilho Global!
 
     def abrir_documento(self, caminho):

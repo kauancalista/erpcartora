@@ -4,13 +4,14 @@ from database.modelos import Processo, Documento, Tarefa, Casamento, Compromisso
 # ==========================================
 # C - CREATE (Criar / Inserir)
 # ==========================================
-def criar_processo(db: Session, nome_cliente: str, tipo_servico: str, cpf: str = None, telefone_whatsapp: str = None, data_prazo=None):
+def criar_processo(db: Session, nome_cliente: str, tipo_servico: str, cpf: str = None, telefone_whatsapp: str = None, data_prazo=None, origem_solicitacao="BALCÃO"):
     novo_processo = Processo(
         nome_cliente=nome_cliente,
         cpf=cpf,
         tipo_servico=tipo_servico,
         telefone_whatsapp=telefone_whatsapp,
-        data_prazo=data_prazo # <--- SALVANDO O PRAZO AQUI
+        data_prazo=data_prazo, # <--- SALVANDO O PRAZO AQUI
+        origem_solicitacao=origem_solicitacao
         # status e data_entrada já são preenchidos automaticamente pelo modelo!
     )
     db.add(novo_processo)

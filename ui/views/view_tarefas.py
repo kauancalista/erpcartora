@@ -85,13 +85,15 @@ class DialogNovaTarefa(QDialog):
             return
 
         db = SessionLocal()
-        criar_tarefa(
-            db,
-            descricao=self.inp_desc.text().strip(),
-            responsavel=self.inp_resp.text().strip() or "Equipe",
-            data_limite=prazo_obj
-        )
-        db.close()
+        try:
+            criar_tarefa(
+                db,
+                descricao=self.inp_desc.text().strip(),
+                responsavel=self.inp_resp.text().strip() or "Equipe",
+                data_limite=prazo_obj
+            )
+        finally:
+            db.close()
         self.accept()
 
 
@@ -208,103 +210,99 @@ class TelaTarefas(QWidget):
     # ==========================================
     # CÉREBRO: PUXANDO DO BANCO DE DADOS
     # ==========================================
-        # ==========================================
-        # CÉREBRO: PUXANDO DO BANCO DE DADOS
-        # ==========================================
     def carregar_dados_hub(self):
         db = SessionLocal()
-         # 1. Puxa Tarefas reais (Manuais e de Processos)
-        tarefas = db.query(Tarefa).filter(Tarefa.status != "Concluída").all()
+        try:
+            # 1. Puxa Tarefas reais (Manuais e de Processos)
+            tarefas = db.query(Tarefa).filter(Tarefa.status != "Concluída").all()
             # 2. Puxa Casamentos Ativos para analisar o Checklist
-        casamentos = db.query(Casamento).filter(Casamento.status != "Arquivado").all()
+            casamentos = db.query(Casamento).filter(Casamento.status != "Arquivado").all()
 
-         # ATENÇÃO: O db.close() foi retirado daqui para manter a conexão viva!
-
-        self.lista_todas_tarefas.clear()
-        count_proc, count_cas, count_man = 0, 0, 0
+            self.lista_todas_tarefas.clear()
+            count_proc, count_cas, count_man = 0, 0, 0
 
             # Formata as Tarefas Reais
-        for t in tarefas:
-            try:
-                data_str = t.data_criacao.strftime("%d/%m/%Y")
-            except:
-                data_str = str(t.data_criacao).split()[0] if t.data_criacao else "Sem prazo"
+            for t in tarefas:
+                try:
+                    data_str = t.data_criacao.strftime("%d/%m/%Y")
+                except:
+                    data_str = str(t.data_criacao).split()[0] if t.data_criacao else "Sem prazo"
 
-             # A INTELIGÊNCIA ESTÁ AQUI: Tem ID de Processo?
-            if t.processo_id:
+                # A INTELIGÊNCIA ESTÁ AQUI: Tem ID de Processo?
+                if t.processo_id:
                     # É uma tarefa de Processo
-                    # Como o banco ainda está aberto, ele consegue ir lá e ler os dados do cliente!
-                nome_cliente = t.processo.nome_cliente if t.processo else "Desconhecido"
-                servico = t.processo.tipo_servico if t.processo else ""
+                    nome_cliente = t.processo.nome_cliente if t.processo else "Desconhecido"
+                    servico = t.processo.tipo_servico if t.processo else ""
 
-                self.lista_todas_tarefas.append({
-                    "tarefa_id": t.id,
-                    "processo_id": t.processo_id,
-                    "casamento_id": None,
-                    "origem": "Processo",
-                    "cor": "#27AE60",
-                    "icone": "📄",
-                    "titulo": t.descricao,
-                    "data_texto": f"Prazo: {data_str}",
-                    "info_extra": f"Cliente: {nome_cliente} | {servico}",
-                    "status": t.status
-                })
-                count_proc += 1
-            else:
+                    self.lista_todas_tarefas.append({
+                        "tarefa_id": t.id,
+                        "processo_id": t.processo_id,
+                        "casamento_id": None,
+                        "origem": "Processo",
+                        "cor": "#27AE60",
+                        "icone": "📄",
+                        "titulo": t.descricao,
+                        "data_texto": f"Prazo: {data_str}",
+                        "info_extra": f"Cliente: {nome_cliente} | {servico}",
+                        "status": t.status
+                    })
+                    count_proc += 1
+                else:
                     # É uma Tarefa Manual (Sem processo)
-                self.lista_todas_tarefas.append({
-                    "tarefa_id": t.id,
-                    "processo_id": None,
-                    "casamento_id": None,
-                    "origem": "Manual",
-                    "cor": "#F39C12",
-                    "icone": "📌",
-                    "titulo": t.descricao,
-                    "data_texto": f"Prazo: {data_str}",
-                    "info_extra": f"Responsável: {t.responsavel}",
-                    "status": t.status
-                })
-                count_man += 1
+                    self.lista_todas_tarefas.append({
+                        "tarefa_id": t.id,
+                        "processo_id": None,
+                        "casamento_id": None,
+                        "origem": "Manual",
+                        "cor": "#F39C12",
+                        "icone": "📌",
+                        "titulo": t.descricao,
+                        "data_texto": f"Prazo: {data_str}",
+                        "info_extra": f"Responsável: {t.responsavel}",
+                        "status": t.status
+                    })
+                    count_man += 1
 
             # Formata Pendências de Casamento
-        for c in casamentos:
-            try:
-                docs_dict = json.loads(c.docs_entregues) if c.docs_entregues else {}
-            except:
-                docs_dict = {}
+            for c in casamentos:
+                try:
+                    docs_dict = json.loads(c.docs_entregues) if c.docs_entregues else {}
+                except:
+                    docs_dict = {}
 
-            cert_noivo = docs_dict.get("Certidão Noivo (Até 90 dias)", False)
-            cert_noiva = docs_dict.get("Certidão Noiva (Até 90 dias)", False)
+                cert_noivo = docs_dict.get("Certidão Noivo (Até 90 dias)", False)
+                cert_noiva = docs_dict.get("Certidão Noiva (Até 90 dias)", False)
 
-            if not cert_noivo or not cert_noiva:
-                faltando_cert = []
-                if not cert_noivo: faltando_cert.append("Noivo")
-                if not cert_noiva: faltando_cert.append("Noiva")
+                if not cert_noivo or not cert_noiva:
+                    faltando_cert = []
+                    if not cert_noivo: faltando_cert.append("Noivo")
+                    if not cert_noiva: faltando_cert.append("Noiva")
 
-                txt_faltando = " e ".join(faltando_cert)
-                data_str = c.data_celebracao.strip() if c.data_celebracao else "A definir"
+                    txt_faltando = " e ".join(faltando_cert)
+                    data_str = c.data_celebracao.strip() if c.data_celebracao else "A definir"
 
-                self.lista_todas_tarefas.append({
-                    "tarefa_id": None,
-                    "processo_id": None,
-                    "casamento_id": c.id,
-                    "origem": "Casamento",
-                    "cor": "#8E44AD",
-                    "icone": "💍",
-                    "titulo": f"Pendência 2ª via Certidão ({txt_faltando}) - {c.nome_noivo} e {c.nome_noiva}",
-                    "data_texto": f"Celebração: {data_str}",
-                    "info_extra": f"Protocolo: {c.protocolo}",
-                    "status": "Aguardando Certidão"
-                })
-                count_cas += 1
+                    self.lista_todas_tarefas.append({
+                        "tarefa_id": None,
+                        "processo_id": None,
+                        "casamento_id": c.id,
+                        "origem": "Casamento",
+                        "cor": "#8E44AD",
+                        "icone": "💍",
+                        "titulo": f"Pendência 2ª via Certidão ({txt_faltando}) - {c.nome_noivo} e {c.nome_noiva}",
+                        "data_texto": f"Celebração: {data_str}",
+                        "info_extra": f"Protocolo: {c.protocolo}",
+                        "status": "Aguardando Certidão"
+                    })
+                    count_cas += 1
 
-        self.lbl_kpi_proc.setText(str(count_proc))
-        self.lbl_kpi_cas.setText(str(count_cas))
-        self.lbl_kpi_manuais.setText(str(count_man))
-        self.renderizar_cards()
+            self.lbl_kpi_proc.setText(str(count_proc))
+            self.lbl_kpi_cas.setText(str(count_cas))
+            self.lbl_kpi_manuais.setText(str(count_man))
+            self.renderizar_cards()
 
+        finally:
             # AGORA SIM! Com todos os dados já montados e lidos, fechamos o banco de dados.
-        db.close()
+            db.close()
 
     # ==========================================
     # RENDERIZAÇÃO DOS CARDS
@@ -412,11 +410,13 @@ class TelaTarefas(QWidget):
     def concluir_tarefa_manual(self, tarefa_id):
         """Dá baixa numa tarefa manual direto pelo botão verde"""
         db = SessionLocal()
-        tarefa = db.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
-        if tarefa:
-            tarefa.status = "Concluída"
-            db.commit()
-        db.close()
+        try:
+            tarefa = db.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
+            if tarefa:
+                tarefa.status = "Concluída"
+                db.commit()
+        finally:
+            db.close()
 
         notificar(self, "Tarefa concluída com sucesso!", "sucesso")
         try:

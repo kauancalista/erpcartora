@@ -14,6 +14,7 @@ from database.crud import (obter_processo_por_id, atualizar_status_processo,
 # IMPORTANDO NOSSAS DUAS TELAS MÁGICAS:
 from ui.dialogs.form_scanner import DialogScannerPopUp
 from ui.componentes import VisualizadorDocumento
+from utils_caminhos import obter_diretorio_base
 
 
 class DialogDetalhesProcesso(QDialog):
@@ -150,9 +151,9 @@ class DialogDetalhesProcesso(QDialog):
     # ==========================================
     def obter_pasta_do_processo(self):
         """Descobre dinamicamente qual é a pasta física deste cliente"""
-        pasta_base = os.path.join(os.getcwd(), "Arquivos_Cartorio")
+        pasta_base = os.path.join(obter_diretorio_base(), "Arquivos_Cartorio")
         try:
-            caminho_config = os.path.join(os.getcwd(), "config", "app_config.json")
+            caminho_config = os.path.join(obter_diretorio_base(), "config", "app_config.json")
             if os.path.exists(caminho_config):
                 with open(caminho_config, "r", encoding="utf-8") as f:
                     cfg = json.load(f)

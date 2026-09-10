@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QCursor
 
+from utils_caminhos import obter_diretorio_base
+
 
 class DialogScannerPopUp(QDialog):
     def __init__(self, pasta_destino_processo, parent=None):
@@ -15,7 +17,7 @@ class DialogScannerPopUp(QDialog):
         self.pasta_destino = pasta_destino_processo
 
         # Onde o sistema vai guardar o arquivo cru
-        self.arquivo_temp = os.path.join(os.getcwd(), "temp_scan_cartorio.jpg")
+        self.arquivo_temp = os.path.join(obter_diretorio_base(), "temp_scan_cartorio.jpg")
 
         self.setWindowTitle("🖨️ Scanner Digital (Integração Canon DR-C240 - 300 DPI A4)")
         self.resize(800, 550)
