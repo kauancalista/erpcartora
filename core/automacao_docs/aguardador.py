@@ -1,6 +1,6 @@
 import time
 from tkinter import messagebox
-from localizador import localizar_documento, extrair_primeiro_conjuge, normalizar
+from core.automacao_docs.localizador import localizar_documento, extrair_primeiro_conjuge, normalizar
 
 
 def aguardar_documentos(nome, pasta, log_callback, modo="CPF", cache_pasta=None):
@@ -28,8 +28,8 @@ def aguardar_documentos(nome, pasta, log_callback, modo="CPF", cache_pasta=None)
         if doc_principal and doc_secundario:
             return doc_principal, doc_secundario
 
-        status_principal = "✓ Documento Principal" if doc_principal else "✗ Documento Principal"
-        status_sec = f"✓ {nome_secundario_exibicao}" if doc_secundario else f"✗ {nome_secundario_exibicao}"
+        status_principal = "✅ Documento Principal" if doc_principal else "❌ Documento Principal"
+        status_sec = f"✅ {nome_secundario_exibicao}" if doc_secundario else f"❌ {nome_secundario_exibicao}"
 
         msg = f"Pendência encontrada para:\n{nome}\n\n{status_principal}\n{status_sec}\n\n"
         msg += "O que deseja fazer?\n"
@@ -43,11 +43,11 @@ def aguardar_documentos(nome, pasta, log_callback, modo="CPF", cache_pasta=None)
             log_callback(f"Aguardando arquivos para: {nome}...")
             time.sleep(1)
             # OTIMIZAÇÃO: reconstrói o cache após o usuário adicionar arquivos
-            from localizador import construir_cache_pasta
-            cache_pasta = construir_cache_pasta(pasta)
+            from core.automacao_docs.localizador import construir_cache_pastas
+            cache_pasta = construir_cache_pastas(pasta)
             continue
         elif resposta is False:
-            log_callback(f"⚠ Faltando documentos. Ignorando e avançando: {nome}.")
+            log_callback(f"⚠️ Faltando documentos. Ignorando e avançando: {nome}.")
             return doc_principal, doc_secundario
         else:
             raise Exception("O processo foi cancelado pelo usuário.")

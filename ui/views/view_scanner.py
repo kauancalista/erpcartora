@@ -24,6 +24,28 @@ from winsdk.windows.graphics.imaging import BitmapDecoder
 
 from utils_caminhos import obter_diretorio_base
 
+import qrcode
+import io
+
+def _gerar_qr_pixmap(url: str, size: int = 150) -> QPixmap:
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=6,
+        border=2,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    img_pil = qr.make_image(fill_color="white", back_color="#11151F")
+
+    buf = io.BytesIO()
+    img_pil.save(buf, format="PNG")
+    buf.seek(0)
+    
+    img_qt = QImage.fromData(buf.read())
+    pix = QPixmap.fromImage(img_qt)
+    return pix.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
 
 class TelaScanner(QWidget):
     def __init__(self):
@@ -99,6 +121,11 @@ class TelaScanner(QWidget):
         self.lbl_status_mobile.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout_inbox.addWidget(self.lbl_status_mobile)
 
+        self.lbl_qrcode = QLabel("")
+        self.lbl_qrcode.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_qrcode.hide()
+        layout_inbox.addWidget(self.lbl_qrcode)
+
         self.lista_inbox = QListWidget()
         self.lista_inbox.itemClicked.connect(self.selecionar_documento)
         layout_inbox.addWidget(self.lista_inbox)
@@ -159,6 +186,9 @@ class TelaScanner(QWidget):
         layout_corpo.addWidget(painel_preview, 4)
         layout_principal.addLayout(layout_corpo)
 
+        # Recupera automaticamente digitalizações que ficaram pendentes no disco
+        self.carregar_arquivos_pendentes_disco()
+
     # ==========================================
     # LÓGICA DE INTEGRAÇÃO COM O CELULAR
     # ==========================================
@@ -186,14 +216,24 @@ class TelaScanner(QWidget):
 
             # Puxa o IP real da máquina na rede na hora H
             ip_atual = self.obter_ip_local()
+            url_celular = f"https://{ip_atual}:5000"
 
             self.btn_mobile.setText("📱 Desativar Celular")
             self.btn_mobile.setStyleSheet(
                 "background-color: #E74C3C; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
 
             # Mostra o endereço exato que deve ser digitado no celular
-            self.lbl_status_mobile.setText(f"Acesse no celular:\nhttps://{ip_atual}:5000")
+            self.lbl_status_mobile.setText(f"Acesse no celular:\n{url_celular}")
             self.lbl_status_mobile.setStyleSheet("color: #2ECC71; font-size: 13px; font-weight: bold;")
+            
+            # Gera e mostra o QR Code
+            try:
+                pix = _gerar_qr_pixmap(url_celular, size=150)
+                self.lbl_qrcode.setPixmap(pix)
+                self.lbl_qrcode.show()
+            except Exception as e:
+                print(f"Erro ao gerar QR Code: {e}")
+
         else:
             # DESLIGAR
             self.timer_mobile.stop()
@@ -204,6 +244,7 @@ class TelaScanner(QWidget):
             self.btn_mobile.setStyleSheet(
                 "background-color: #2980B9; color: white; font-weight: bold; padding: 10px; border-radius: 6px;")
             self.lbl_status_mobile.setText("Celular desativado.")
+            self.lbl_qrcode.hide()
             self.lbl_status_mobile.setStyleSheet("color: #8A92A6; font-size: 11px; font-weight: bold;")
 
     def puxar_fotos_do_celular(self):
@@ -239,6 +280,30 @@ class TelaScanner(QWidget):
             if novos:
                 self.atualizar_lista_inbox()
 
+    def carregar_arquivos_pendentes_disco(self):
+        """Carrega arquivos que estavam salvos em temp_scanner para não perder scans anteriores."""
+        pasta_temp = os.path.join(obter_diretorio_base(), "temp_scanner")
+        if not os.path.exists(pasta_temp):
+            return
+        arquivos = [f for f in os.listdir(pasta_temp) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.pdf')) and not f.endswith("_temp_ocr.jpg")]
+        for arq in arquivos:
+            caminho = os.path.join(pasta_temp, arq)
+            nome_sugerido = arq.rsplit('.', 1)[0]
+            if nome_sugerido.startswith("Mobile_"):
+                partes = nome_sugerido.split("_", 2)
+                if len(partes) == 3:
+                    nome_sugerido = partes[2]
+            self.arquivos_na_fila.append({
+                "caminho": caminho,
+                "nome_sugerido": nome_sugerido,
+                "origem": "recuperado",
+                "ocr_feito": False,
+                "processo_index": 0
+            })
+        if self.arquivos_na_fila:
+            self.atualizar_lista_inbox()
+            self.selecionar_documento(self.lista_inbox.item(0))
+
     # ==========================================
     # EVENTOS BÁSICOS
     # ==========================================
@@ -252,9 +317,9 @@ class TelaScanner(QWidget):
     def carregar_processos_ativos(self):
         self.combo_processos.clear()
         self.processos_ativos_cache = []
-        db = SessionLocal()
-        ativos = db.query(Processo).filter(Processo.status.notin_(["Arquivado", "CRAS", "Entregue"])).all()
-        db.close()
+        from database.conexao import get_db_session
+        with get_db_session() as db:
+            ativos = db.query(Processo).filter(Processo.status.notin_(["Arquivado", "CRAS", "Entregue"])).all()
 
         self.combo_processos.addItem("Nenhum (Salvar em Documentos Avulsos)", None)
         for p in ativos:
@@ -294,16 +359,24 @@ class TelaScanner(QWidget):
             self.txt_ocr_preview.setStyleSheet(
                 "color: #8A92A6; font-size: 11px; font-family: Consolas; border: 1px dashed #2C364C; padding: 10px; border-radius: 4px;")
 
+        doc = None
         try:
             import fitz
             doc = fitz.open(item_data["caminho"])
-            page = doc[0]
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
-            self.lbl_imagem_preview.setPixmap(QPixmap.fromImage(img))
-            self.lbl_imagem_preview.setScaledContents(True)
-        except:
+            if len(doc) > 0:
+                page = doc[0]
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
+                self.lbl_imagem_preview.setPixmap(QPixmap.fromImage(img.copy()))
+                self.lbl_imagem_preview.setScaledContents(True)
+        except Exception:
             self.lbl_imagem_preview.setText("Erro ao carregar visualização.")
+        finally:
+            if doc:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
 
     # ==========================================
     # LÓGICA DO SCANNER FÍSICO
@@ -357,13 +430,25 @@ class TelaScanner(QWidget):
             while True:
                 try:
                     imagem = cd.ShowTransfer(item, "{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}", False)
-                    if not imagem: break
+                    if not imagem:
+                        break
 
                     nome_arq = f"Scan_{int(datetime.now().timestamp())}_{paginas_lidas}.jpg"
                     caminho_completo = os.path.join(pasta_temp, nome_arq)
 
-                    if os.path.exists(caminho_completo): os.remove(caminho_completo)
+                    if os.path.exists(caminho_completo):
+                        os.remove(caminho_completo)
                     imagem.SaveFile(caminho_completo)
+
+                    # OTIMIZAÇÃO: Comprime o BMP cru do WIA para JPEG 85% real (reduz de 26MB para ~1MB)
+                    try:
+                        from PIL import Image
+                        with Image.open(caminho_completo) as pil_img:
+                            if pil_img.mode != "RGB":
+                                pil_img = pil_img.convert("RGB")
+                            pil_img.save(caminho_completo, "JPEG", quality=85, optimize=True)
+                    except Exception:
+                        pass
 
                     self.arquivos_na_fila.append({
                         "caminho": caminho_completo,
@@ -376,18 +461,16 @@ class TelaScanner(QWidget):
 
                 except Exception as ex:
                     msg_erro = str(ex).lower()
-                    if "80210003" in msg_erro or "-2145320957" in msg_erro or "alimentador" in msg_erro:
-                        break
-                    else:
-                        raise ex
+                    # Fim do papel no alimentador ou erro de leitura: encerra o lote preservando o que já leu
+                    break
 
             self.atualizar_lista_inbox()
 
             if paginas_lidas > 0:
                 QMessageBox.information(self, "Sucesso",
-                                        f"Digitalização em lote concluída!\n{paginas_lidas} página(s).")
+                                        f"Digitalização em lote concluída!\n{paginas_lidas} página(s) processadas.")
             else:
-                QMessageBox.warning(self, "Bandeja Vazia", "Não havia papel no alimentador do Canon.")
+                QMessageBox.warning(self, "Bandeja Vazia", "Não havia papel no alimentador do Canon ou o scanner foi cancelado.")
 
         except Exception as e:
             QMessageBox.warning(self, "Aviso do Scanner", f"Falha de comunicação:\n{e}")
@@ -572,19 +655,26 @@ class TelaScanner(QWidget):
             else:
                 pdf_existente = fitz.open(caminho_original)
                 doc.insert_pdf(pdf_existente)
+                pdf_existente.close()
 
             doc.save(caminho_pdf_final)
             doc.close()
 
             if os.path.exists(caminho_original):
-                os.remove(caminho_original)
+                try:
+                    os.remove(caminho_original)
+                except Exception:
+                    pass
 
             if processo:
                 from database.crud import adicionar_documento
                 db = SessionLocal()
-                # Salva no banco de dados com espaços normais
-                adicionar_documento(db, processo.id, f"{nome_arquivo_seguro}.pdf", tipo_no_banco, caminho_pdf_final)
-                db.close()
+                try:
+                    # Salva no banco com o nome real exato gravado no disco (incluindo eventual contador)
+                    nome_final_real = os.path.basename(caminho_pdf_final)
+                    adicionar_documento(db, processo.id, nome_final_real, tipo_no_banco, caminho_pdf_final)
+                finally:
+                    db.close()
 
             self.arquivos_na_fila.remove(self.arquivo_selecionado)
             self.arquivo_selecionado = None

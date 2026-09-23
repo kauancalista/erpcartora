@@ -6,36 +6,50 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 from ui.views.main_dashboard import MainWindow
 
 
+from utils_caminhos import obter_diretorio_base
+
+
 # ==========================================
 # INTERCEPTADOR GLOBAL DE ERROS FATAIS
 # ==========================================
 def interceptador_erros(tipo_erro, valor_erro, traceback_erro):
-    """Captura falhas críticas, salva no log e exibe alerta amigável na UI."""
+    """Captura falhas críticas, salva no log e exibe alerta amigável na UI sem fechar o app à força."""
+    if issubclass(tipo_erro, KeyboardInterrupt):
+        sys.__excepthook__(tipo_erro, valor_erro, traceback_erro)
+        return
+
     texto_erro = "".join(traceback.format_exception(tipo_erro, valor_erro, traceback_erro))
 
-    # 1. Grava de forma invisível no arquivo erros.log na raiz do projeto
-    with open("erros.log", "a", encoding="utf-8") as arquivo_log:
-        arquivo_log.write(f"\n{'=' * 40}\nDATA: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
-        arquivo_log.write(texto_erro)
-        arquivo_log.write(f"{'=' * 40}\n")
+    # 1. Grava de forma segura no arquivo erros.log na raiz do projeto
+    try:
+        caminho_log = os.path.join(obter_diretorio_base(), "erros.log")
+        with open(caminho_log, "a", encoding="utf-8") as arquivo_log:
+            arquivo_log.write(f"\n{'=' * 40}\nDATA: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
+            arquivo_log.write(texto_erro)
+            arquivo_log.write(f"{'=' * 40}\n")
+    except Exception:
+        pass
 
     # 2. Levanta a janela amigável (se a interface gráfica já estiver ativa)
     app = QApplication.instance()
     if app:
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Icon.Critical)
-        msg.setWindowTitle("Ops! Instabilidade no Sistema")
-        msg.setText("O sistema encontrou uma falha inesperada e precisou interromper a ação.")
-        msg.setInformativeText(
-            "Os detalhes técnicos foram gravados no arquivo 'erros.log'. Por favor, avise o suporte.")
+        try:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Icon.Critical)
+            msg.setWindowTitle("Ops! Instabilidade no Sistema")
+            msg.setText("Ocorreu uma falha inesperada durante a execução desta ação.")
+            msg.setInformativeText(
+                "Os detalhes técnicos foram gravados no arquivo 'erros.log'. O sistema continuará ativo.")
 
-        # Cria o botão "Show Details..." para leitura rápida do erro
-        msg.setDetailedText(texto_erro)
-        msg.setStyleSheet("background-color: #11151F; color: white;")
-        msg.exec()
-
-    # 3. Fecha o processo no Windows com segurança
-    sys.exit(1)
+            # Cria o botão "Show Details..." para leitura rápida do erro
+            msg.setDetailedText(texto_erro)
+            msg.setStyleSheet("background-color: #11151F; color: white;")
+            msg.exec()
+        except Exception:
+            pass
+    else:
+        # Se a interface nem abriu, encerra
+        sys.exit(1)
 
 
 # Liga o radar de erros no Python ANTES de qualquer tela abrir

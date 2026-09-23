@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from database.conexao import Base, engine
+from database.conexao import Base
 
 
 # ==========================================
@@ -101,7 +101,48 @@ class Compromisso(Base):
     status = Column(String, default="Confirmado")
 
 # ==========================================
-# ATUALIZA O BANCO DE DADOS
+# TABELA 6: NOTIFICAÇÕES (Histórico & Alertas)
 # ==========================================
-# Ao rodar isso, o SQLAlchemy cria as duas novas tabelas automaticamente
-Base.metadata.create_all(bind=engine)
+class Notificacao(Base):
+    __tablename__ = "notificacoes"
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(String, nullable=False)
+    subtitulo = Column(String, nullable=True)
+    tipo = Column(String, default="info")  # "sucesso", "alerta", "info", "prazo"
+    data_criacao = Column(DateTime, default=datetime.now)
+    lida = Column(Integer, default=0)
+
+# ==========================================
+# TABELA 7: LIVROS (Módulo de Digitalização)
+# ==========================================
+class Livro(Base):
+    __tablename__ = "livros"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    tipo_livro = Column(String, nullable=False) # Ex: A, B, B-AUX, C
+    numero_livro = Column(Integer, nullable=False)
+    total_paginas = Column(Integer, nullable=False)
+    registros_por_pagina = Column(Integer, nullable=False)
+    numeracao_inicial = Column(Integer, nullable=False)
+    tem_verso = Column(Integer, default=0) # 0 = Apenas Frente, 1 = Frente e Verso
+    
+    paginas = relationship("PaginaDigitalizada", back_populates="livro", cascade="all, delete-orphan")
+
+# ==========================================
+# TABELA 8: PÁGINAS DIGITALIZADAS (Capturas)
+# ==========================================
+class PaginaDigitalizada(Base):
+    __tablename__ = "paginas_digitalizadas"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    livro_id = Column(Integer, ForeignKey("livros.id"), nullable=False)
+    numero_pagina = Column(Integer, nullable=False)
+    registro_inicial = Column(Integer, nullable=False)
+    registro_final = Column(Integer, nullable=False)
+    caminho_relativo = Column(String, nullable=False) # Guarda apenas o caminho relativo ao Storage da rede
+    data_captura = Column(DateTime, default=datetime.now)
+    
+    processo_id = Column(Integer, ForeignKey("processos.id"), nullable=True) # Vinculo opcional
+    
+    livro = relationship("Livro", back_populates="paginas")
+    processo = relationship("Processo")

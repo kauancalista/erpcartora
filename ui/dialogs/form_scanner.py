@@ -186,6 +186,11 @@ class DialogScannerPopUp(QDialog):
         nome_final = f"{nome_limpo}.jpg"
         caminho_final = os.path.join(self.pasta_destino, nome_final)
 
+        contador = 1
+        while os.path.exists(caminho_final):
+            caminho_final = os.path.join(self.pasta_destino, f"{nome_limpo} ({contador}).jpg")
+            contador += 1
+
         try:
             shutil.move(self.arquivo_temp, caminho_final)
             QMessageBox.information(self, "Sucesso", "Documento salvo na Ficha do Cliente!")

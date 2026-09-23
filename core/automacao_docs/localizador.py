@@ -70,19 +70,35 @@ def extrair_primeiro_conjuge(texto_normalizado):
     return texto_normalizado
 
 
-def construir_cache_pasta(pasta):
+def construir_cache_pastas(pastas):
     """
-    OTIMIZAÇÃO: lê e normaliza os arquivos da pasta uma única vez.
-    Retorna lista de tuplas (nome_original, nome_normalizado, extensao).
+    OTIMIZAÇÃO: lê e normaliza os arquivos de MÚLTIPLAS pastas e suas subpastas uma única vez.
+    Retorna lista de dicionários com nome e caminho absoluto.
     Deve ser chamado uma vez antes de processar todos os nomes da planilha,
     e o resultado passado para localizar_documento via cache_pasta.
     """
+    if isinstance(pastas, str):
+        pastas = [pastas]
+        
     cache = []
-    for arquivo in os.listdir(pasta):
-        nome_arquivo, extensao = os.path.splitext(arquivo)
-        if extensao.lower() not in EXTENSOES_VALIDAS:
+    for pasta in pastas:
+        if not os.path.exists(pasta):
             continue
-        cache.append((arquivo, normalizar(nome_arquivo), extensao.lower()))
+            
+        for raiz, _, arquivos in os.walk(pasta):
+            for arquivo in arquivos:
+                nome_arquivo, extensao = os.path.splitext(arquivo)
+                if extensao.lower() not in EXTENSOES_VALIDAS:
+                    continue
+                
+                # Guardamos o caminho completo para não nos perdermos com arquivos de mesmo nome em pastas diferentes
+                caminho_completo = os.path.join(raiz, arquivo)
+                cache.append({
+                    "arquivo": arquivo,
+                    "caminho_completo": caminho_completo,
+                    "nome_normalizado": normalizar(nome_arquivo),
+                    "extensao": extensao.lower()
+                })
     return cache
 
 
@@ -90,10 +106,10 @@ def localizar_documento(nome_original, pasta, cache_pasta=None):
     """
     Localiza um documento na pasta pelo nome.
 
-    cache_pasta: resultado de construir_cache_pasta(pasta).
+    cache_pasta: resultado de construir_cache_pastas(pasta).
     Se não for fornecido, a pasta é lida na hora (comportamento original).
     Para processar muitos nomes, prefira passar o cache para evitar
-    múltiplos os.listdir na mesma pasta.
+    múltiplos os.walk na mesma pasta.
     """
     nome_norm_completo = normalizar(nome_original)
     nome_primeiro_conjuge = extrair_primeiro_conjuge(nome_norm_completo)
@@ -101,16 +117,21 @@ def localizar_documento(nome_original, pasta, cache_pasta=None):
     melhor_match = None
     maior_similaridade = 0
     arquivo_encontrado = None
+    caminho_encontrado = None
 
     # Usa o cache se fornecido, senão lê a pasta na hora
     if cache_pasta is None:
-        cache_pasta = construir_cache_pasta(pasta)
+        cache_pasta = construir_cache_pastas(pasta)
 
-    for arquivo, nome_arquivo_norm, _ in cache_pasta:
+    for item in cache_pasta:
+        arquivo = item["arquivo"]
+        caminho_completo = item["caminho_completo"]
+        nome_arquivo_norm = item["nome_normalizado"]
+
         # CAMADA 1: Busca exata pelo casal (o PDF tem o nome dos dois)
         if nome_arquivo_norm == nome_norm_completo:
             return {
-                "caminho": os.path.join(pasta, arquivo),
+                "caminho": caminho_completo,
                 "tipo": "Encontrado",
                 "similaridade": 100,
                 "arquivo": arquivo
@@ -119,14 +140,14 @@ def localizar_documento(nome_original, pasta, cache_pasta=None):
         # CAMADA 2: Busca exata pelo 1º cônjuge (o PDF só tem o nome de um)
         if nome_arquivo_norm == nome_primeiro_conjuge:
             return {
-                "caminho": os.path.join(pasta, arquivo),
+                "caminho": caminho_completo,
                 "tipo": "Encontrado",
                 "similaridade": 100,
                 "arquivo": arquivo
             }
 
         # Um arquivo que é "nome + CPF" (ou + FERC/CRAS/REGISTRE-SE) é um
-        # ANEXO, não o documento principal — mesmo que a diferença de texto
+        # ANEXO, não o documento principal – mesmo que a diferença de texto
         # seja pequena o bastante pra passar no limiar de similaridade.
         # Sem essa checagem, buscar "JOAO SILVA" podia "achar" o arquivo
         # "JOAO SILVA CPF.pdf" e considerar o principal como entregue.
@@ -139,11 +160,12 @@ def localizar_documento(nome_original, pasta, cache_pasta=None):
             maior_similaridade = similaridade
             melhor_match = nome_arquivo_norm
             arquivo_encontrado = arquivo
+            caminho_encontrado = caminho_completo
 
     # CAMADA 4: Retorna se a similaridade for >= 90%
     if maior_similaridade >= 90:
         return {
-            "caminho": os.path.join(pasta, arquivo_encontrado),
+            "caminho": caminho_encontrado,
             "tipo": "Encontrado (similaridade)",
             "similaridade": round(maior_similaridade, 1),
             "arquivo": arquivo_encontrado

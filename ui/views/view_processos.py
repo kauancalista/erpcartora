@@ -112,7 +112,13 @@ class TelaProcessos(QWidget):
         self.input_pesquisa = QLineEdit()
         self.input_pesquisa.setPlaceholderText("Pesquisar por nome ou protocolo...")
         self.input_pesquisa.setStyleSheet("background-color: transparent; border: none; color: white; font-size: 14px;")
-        self.input_pesquisa.textChanged.connect(self.filtrar_tabela)
+
+        # Timer de debounce para não travar a interface a cada letra digitada
+        self.timer_busca = QTimer(self)
+        self.timer_busca.setSingleShot(True)
+        self.timer_busca.setInterval(300)
+        self.timer_busca.timeout.connect(self.filtrar_tabela)
+        self.input_pesquisa.textChanged.connect(lambda: self.timer_busca.start())
 
         layout_filtros.addWidget(self.btn_atualizar)
         layout_filtros.addWidget(self.combo_filtro)
@@ -135,52 +141,66 @@ class TelaProcessos(QWidget):
         self.scroll.setWidget(self.container_blocos)
         layout_principal.addWidget(self.scroll)
 
+        self.docs_por_processo = {}
         self.carregar_dados()
 
     def abrir_formulario(self):
         janela = DialogNovoProcesso()
         if janela.exec() == QDialog.DialogCode.Accepted:
-            self.sincronizar_erp()  # <-- Gatilho Global!
+            self.carregar_dados()
 
     def abrir_detalhes(self, processo_id):
         janela_detalhes = DialogDetalhesProcesso(processo_id)
         if janela_detalhes.exec() == QDialog.DialogCode.Accepted:
-            self.sincronizar_erp()  # <-- Gatilho Global!
+            self.carregar_dados()
 
     def carregar_dados(self):
-        db = SessionLocal()
-        try:
-            self.todos_processos = listar_todos_processos(db)
-        finally:
-            db.close()
         self.filtrar_tabela()
 
     def filtrar_tabela(self):
         self.carregando = True
         termo_pesquisa = self.input_pesquisa.text().lower().strip()
         filtro_aba = self.combo_filtro.currentText()
-
-        processos_filtrados = []
-
-        for p in self.todos_processos:
-            protocolo_str = f"2026.08.{p.id:04d}"
-
+        
+        db = SessionLocal()
+        try:
+            from database.modelos import Processo, Documento
+            query = db.query(Processo)
+            
+            # Aplica os Filtros no Banco de Dados (Velocidade e Memória otimizadas)
             if termo_pesquisa:
-                if termo_pesquisa in p.nome_cliente.lower() or termo_pesquisa in protocolo_str:
-                    processos_filtrados.append(p)
-                continue
-
-            is_ativo = p.status not in ["Arquivado", "CRAS", "Entregue"]
-
-            if filtro_aba == "Exibir: Ativos" and not is_ativo: continue
-            if filtro_aba == "Exibir: Entregues" and p.status != "Entregue": continue
-            if filtro_aba == "Exibir: CRAS" and p.status != "CRAS": continue
-            if filtro_aba == "Exibir: Arquivados" and p.status != "Arquivado": continue
-
-            processos_filtrados.append(p)
-
-        self.renderizar_blocos(processos_filtrados)
-        self.carregando = False
+                # Busca flexível por ID ou Nome
+                if termo_pesquisa.isnumeric() or "2026" in termo_pesquisa:
+                    numero = ''.join(filter(str.isdigit, termo_pesquisa))
+                    if numero:
+                        query = query.filter(Processo.id == int(numero[-4:]))
+                else:
+                    query = query.filter(Processo.nome_cliente.ilike(f"%{termo_pesquisa}%"))
+            else:
+                if filtro_aba == "Exibir: Ativos":
+                    query = query.filter(~Processo.status.in_(["Arquivado", "CRAS", "Entregue"]))
+                elif filtro_aba == "Exibir: Entregues":
+                    query = query.filter(Processo.status == "Entregue")
+                elif filtro_aba == "Exibir: CRAS":
+                    query = query.filter(Processo.status == "CRAS")
+                elif filtro_aba == "Exibir: Arquivados":
+                    query = query.filter(Processo.status == "Arquivado")
+            
+            # Limita a 100 resultados recentes para nunca travar a UI (Paginação / Virtualização visual)
+            processos_filtrados = query.order_by(Processo.id.desc()).limit(100).all()
+            
+            # Busca os documentos apenas para os 100 processos que aparecerão na tela
+            self.docs_por_processo = {}
+            ids_filtrados = [p.id for p in processos_filtrados]
+            if ids_filtrados:
+                docs = db.query(Documento).filter(Documento.processo_id.in_(ids_filtrados)).all()
+                for d in docs:
+                    self.docs_por_processo.setdefault(d.processo_id, []).append(d)
+                    
+            self.renderizar_blocos(processos_filtrados)
+        finally:
+            db.close()
+            self.carregando = False
 
     def renderizar_blocos(self, processos_filtrados):
         # O BUG ESTAVA AQUI! Limpando os widgets e os espaços (stretches) corretamente:
@@ -228,12 +248,8 @@ class TelaProcessos(QWidget):
             lay_bloco.addLayout(info_lay)
             lay_bloco.addStretch()
 
-            # ---> Documentos Anexados (Centro)
-            db = SessionLocal()
-            try:
-                docs = listar_documentos_do_processo(db, p.id)
-            finally:
-                db.close()
+            # ---> Documentos Anexados (Centro - Obtidos da memória sem N+1 consultas ao banco)
+            docs = self.docs_por_processo.get(p.id, [])
 
             docs_lay = QHBoxLayout()
             docs_lay.setSpacing(5)
@@ -322,7 +338,8 @@ class TelaProcessos(QWidget):
             atualizar_status_processo(db, processo_id, status_final)
         finally:
             db.close()
-        QTimer.singleShot(1, self.sincronizar_erp)  # <-- Gatilho Global!
+        # Atualiza a view atual (remove da lista se foi concluído), mas não trava o app inteiro
+        QTimer.singleShot(1, self.carregar_dados)
 
     def abrir_documento(self, caminho):
         if os.path.exists(caminho):
@@ -330,10 +347,3 @@ class TelaProcessos(QWidget):
             visualizador.exec()
         else:
             QMessageBox.warning(self, "Erro", "Arquivo não encontrado fisicamente na pasta.")
-
-    def sincronizar_erp(self):
-        """Chama a MainWindow para atualizar o sistema inteiro de uma vez"""
-        try:
-            self.window().atualizar_todas_telas()
-        except:
-            self.carregar_dados()  # Fallback de segurança

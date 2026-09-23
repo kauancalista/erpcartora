@@ -1,4 +1,4 @@
-from localizador import localizar_documento, extrair_primeiro_conjuge, normalizar, construir_cache_pasta, eh_mesmo_arquivo
+from core.automacao_docs.localizador import localizar_documento, extrair_primeiro_conjuge, normalizar, construir_cache_pastas, eh_mesmo_arquivo
 
 
 def conferir_documentos(nomes, pasta, modo="CPF"):
@@ -6,7 +6,7 @@ def conferir_documentos(nomes, pasta, modo="CPF"):
     pendentes = []
 
     # Cache da pasta construído uma única vez para toda a conferência
-    cache_pasta = construir_cache_pasta(pasta)
+    cache_pasta = construir_cache_pastas(pasta)
 
     for nome in nomes:
         doc = localizar_documento(nome, pasta, cache_pasta)

@@ -42,19 +42,34 @@ def upload():
 
     arquivo = request.files["imagem"]
 
-    # Pega o nome que o usuário digitou no celular
-    nome_personalizado = request.form.get("nome", "doc_digitalizado").strip().upper()
+    import re
+    import time
 
-    # Mantém a extensão como .jpg
-    extensao = os.path.splitext(arquivo.filename)[1]
-    if not extensao:
+    # Sanitiza o nome contra caracteres proibidos e Path Traversal
+    nome_limpo = re.sub(r'[\\/*?:"<>|]', "", nome_personalizado)
+    if not nome_limpo:
+        nome_limpo = "DOC_DIGITALIZADO"
+
+    # Mantém a extensão válida
+    extensao = os.path.splitext(arquivo.filename)[1].lower()
+    if extensao not in ['.jpg', '.jpeg', '.png']:
         extensao = ".jpg"
 
-    nome_final = f"{nome_personalizado}{extensao}"
+    timestamp = int(time.time() * 1000)
+    nome_final = f"{nome_limpo}_{timestamp}{extensao}"
 
-    # Salva na pasta para a TelaScanner puxar
-    caminho_salvo = os.path.join(UPLOAD_FOLDER, nome_final)
-    arquivo.save(caminho_salvo)
+    # Salva primeiro como .uploading para evitar que o QTimer da UI
+    # mova o arquivo enquanto o upload ainda está sendo transferido!
+    caminho_temp = os.path.join(UPLOAD_FOLDER, f"{nome_final}.uploading")
+    caminho_final = os.path.join(UPLOAD_FOLDER, nome_final)
+
+    try:
+        arquivo.save(caminho_temp)
+        os.replace(caminho_temp, caminho_final)
+    except Exception as e:
+        if os.path.exists(caminho_temp):
+            os.remove(caminho_temp)
+        return jsonify({"erro": f"Falha ao salvar imagem: {str(e)}"}), 500
 
     return jsonify({"status": "sucesso"}), 200
 

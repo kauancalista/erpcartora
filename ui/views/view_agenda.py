@@ -48,10 +48,12 @@ class DialogNovoCompromisso(QDialog):
         self.inp_data = QLineEdit()
         self.inp_data.setPlaceholderText("DD/MM/AAAA")
         self.inp_data.setStyleSheet(estilo_input)
+        self.inp_data.setInputMask("00/00/0000;_")
 
         self.inp_hora = QLineEdit()
         self.inp_hora.setPlaceholderText("HH:MM")
         self.inp_hora.setStyleSheet(estilo_input)
+        self.inp_hora.setInputMask("00:00;_")
 
         box_data_hora.addWidget(self.inp_data)
         box_data_hora.addWidget(self.inp_hora)
@@ -279,10 +281,13 @@ class TelaAgenda(QWidget):
     def carregar_dados_globais(self):
         db = SessionLocal()
         try:
-            casamentos = db.query(Casamento).all()
-            processos = db.query(Processo).all()
-            tarefas = db.query(Tarefa).all()
-            compromissos = db.query(Compromisso).all()  # <--- Puxa a nova tabela!
+            # Paginação de Segurança (Gargalo 2):
+            # Limita a leitura da memória a 300 itens recentes por categoria,
+            # evitando carregar 50.000 processos do passado e explodir a RAM.
+            casamentos = db.query(Casamento).order_by(Casamento.id.desc()).limit(300).all()
+            processos = db.query(Processo).order_by(Processo.id.desc()).limit(300).all()
+            tarefas = db.query(Tarefa).order_by(Tarefa.id.desc()).limit(300).all()
+            compromissos = db.query(Compromisso).order_by(Compromisso.id.desc()).limit(300).all()
         finally:
             db.close()
 

@@ -402,10 +402,7 @@ class TelaTarefas(QWidget):
         """Abre a janela de detalhes real e sincroniza ao fechar"""
         janela = DialogDetalhesProcesso(processo_id)
         if janela.exec() == QDialog.DialogCode.Accepted:
-            try:
-                self.window().atualizar_todas_telas()
-            except:
-                self.carregar_dados_hub()
+            self.carregar_dados_hub()
 
     def concluir_tarefa_manual(self, tarefa_id):
         """Dá baixa numa tarefa manual direto pelo botão verde"""
@@ -419,19 +416,13 @@ class TelaTarefas(QWidget):
             db.close()
 
         notificar(self, "Tarefa concluída com sucesso!", "sucesso")
-        try:
-            self.window().atualizar_todas_telas()
-        except:
-            self.carregar_dados_hub()
+        self.carregar_dados_hub()
 
     def abrir_dialog_novo(self):
         dialog = DialogNovaTarefa(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             notificar(self, "Tarefa manual adicionada com sucesso!", "sucesso")
-            try:
-                self.window().atualizar_todas_telas()
-            except:
-                self.carregar_dados_hub()
+            self.carregar_dados_hub()
 
     def criar_kpi_card(self, titulo, label_valor, cor_destaque):
         card = QFrame()

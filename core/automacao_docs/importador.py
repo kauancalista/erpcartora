@@ -1,8 +1,8 @@
 import os
 import shutil
 
-from localizador import (
-    construir_cache_pasta,
+from core.automacao_docs.localizador import (
+    construir_cache_pastas,
     localizar_documento,
     extrair_primeiro_conjuge,
     normalizar,
@@ -58,7 +58,7 @@ def importar_arquivos(pasta_origem, pasta_destino, mover=True, pendentes=None, m
             if os.path.isfile(os.path.join(pasta_origem, arquivo))
         ]
     else:
-        cache_origem = construir_cache_pasta(pasta_origem)
+        cache_origem = construir_cache_pastas(pasta_origem)
         caminhos_origem = []
 
         for item in pendentes:

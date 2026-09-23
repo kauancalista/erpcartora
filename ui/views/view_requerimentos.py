@@ -31,6 +31,31 @@ class TelaRequerimentos(QWidget):
             QRadioButton::indicator:checked { background-color: #2962FF; border: 2px solid #2962FF; }
             QTextEdit { background-color: #0B0E14; border: 1px solid #1E2532; border-radius: 6px; color: white; padding: 10px; font-size: 13px; }
             QTextEdit:focus { border: 1px solid #2962FF; }
+            QComboBox {
+                background-color: #0B0E14; 
+                border: 1px solid #1E2532; 
+                border-radius: 6px; 
+                color: white; 
+                padding: 8px 15px; 
+                font-size: 14px;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #11151F;
+                color: white;
+                selection-background-color: #2962FF;
+                border: 1px solid #1E2532;
+                outline: none;
+            }
+            QComboBox QAbstractItemView::item {
+                min-height: 35px;
+                padding-left: 10px;
+            }
         """)
 
         layout_principal = QVBoxLayout(self)

@@ -170,18 +170,21 @@ class DialogDetalhesProcesso(QDialog):
         """Mágica pura: Lê a pasta e salva automaticamente novos arquivos no Banco!"""
         pasta = self.obter_pasta_do_processo()
         db = SessionLocal()
+        try:
+            # Pega a lista de arquivos que já estão salvos no banco
+            docs_no_banco = [doc.nome_arquivo for doc in listar_documentos_do_processo(db, self.processo_id)]
 
-        # Pega a lista de arquivos que já estão salvos no banco
-        docs_no_banco = [doc.nome_arquivo for doc in listar_documentos_do_processo(db, self.processo_id)]
+            # Varre a pasta física do Windows (apenas arquivos)
+            for arquivo in os.listdir(pasta):
+                caminho_completo = os.path.join(pasta, arquivo)
+                if not os.path.isfile(caminho_completo):
+                    continue
 
-        # Varre a pasta física do Windows
-        for arquivo in os.listdir(pasta):
-            if arquivo not in docs_no_banco:
-                # Arquivo fantasma achado! Cadastrando no banco agora.
-                caminho_final = os.path.join(pasta, arquivo)
-                adicionar_documento(db, self.processo_id, arquivo, "Documento", caminho_final)
-
-        db.close()
+                if arquivo not in docs_no_banco:
+                    # Arquivo fantasma achado! Cadastrando no banco agora.
+                    adicionar_documento(db, self.processo_id, arquivo, "Documento", caminho_completo)
+        finally:
+            db.close()
 
     # ==========================================
     # AÇÕES DOS BOTÕES E ARQUIVOS
@@ -205,7 +208,14 @@ class DialogDetalhesProcesso(QDialog):
             nome_arquivo_original = os.path.basename(caminho_arquivo)
             pasta_destino = self.obter_pasta_do_processo()
 
+            # Proteção contra sobrescrita de arquivo existente
+            nome_base, extensao = os.path.splitext(nome_arquivo_original)
             caminho_final = os.path.join(pasta_destino, nome_arquivo_original)
+            contador = 1
+            while os.path.exists(caminho_final):
+                caminho_final = os.path.join(pasta_destino, f"{nome_base} ({contador}){extensao}")
+                contador += 1
+
             shutil.copy2(caminho_arquivo, caminho_final)
 
             # Auto-Sync! Atualiza o banco

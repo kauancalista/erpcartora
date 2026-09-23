@@ -28,10 +28,12 @@ class DialogNovoProcesso(QDialog):
         self.input_cpf = QLineEdit()
         self.input_cpf.setPlaceholderText("000.000.000-00")
         self.input_cpf.setStyleSheet(input_style)
+        self.input_cpf.setInputMask("000.000.000-00;_")
 
         self.input_whatsapp = QLineEdit()
         self.input_whatsapp.setPlaceholderText("(11) 99999-9999")
         self.input_whatsapp.setStyleSheet(input_style)
+        self.input_whatsapp.setInputMask("(00) 00000-0000;_")
 
         self.combo_servico = QComboBox()
         self.combo_servico.addItems([
@@ -105,23 +107,33 @@ class DialogNovoProcesso(QDialog):
             QMessageBox.warning(self, "Aviso", "O campo 'Nome Completo' é obrigatório!")
             return
 
-        try:
-            if prazo_str and prazo_str != "//":
+        prazo_digitos = re.sub(r'[^0-9]', '', prazo_str)
+        if len(prazo_digitos) == 8:
+            try:
                 prazo_tarefa = datetime.strptime(prazo_str, "%d/%m/%Y")
-            else:
-                prazo_tarefa = datetime.now() + timedelta(days=7)
-        except ValueError:
-            QMessageBox.warning(self, "Erro na Data", "A data digitada é inválida. Use um dia e mês que existam!")
+            except ValueError:
+                QMessageBox.warning(self, "Erro na Data", "A data digitada é inválida. Use um dia e mês que existam!")
+                return
+        elif len(prazo_digitos) == 0:
+            prazo_tarefa = datetime.now() + timedelta(days=7)
+        else:
+            QMessageBox.warning(self, "Erro na Data", "A data informada está incompleta. Digite o formato DD/MM/AAAA ou deixe em branco.")
             return
+
+        cpf_digitos = re.sub(r'[^0-9]', '', cpf)
+        cpf_final = cpf if len(cpf_digitos) > 0 else None
+
+        wpp_digitos = re.sub(r'[^0-9]', '', whatsapp)
+        wpp_final = whatsapp if len(wpp_digitos) > 0 else None
 
         db = SessionLocal()
         try:
             novo_processo = criar_processo(
                 db,
                 nome_cliente=nome,
-                cpf=cpf,
+                cpf=cpf_final,
                 tipo_servico=servico,
-                telefone_whatsapp=whatsapp,
+                telefone_whatsapp=wpp_final,
                 data_prazo=prazo_tarefa,
                 origem_solicitacao=origem  # ENVIA A INFORMAÇÃO PARA O CRUD
             )

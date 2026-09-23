@@ -3,7 +3,7 @@ import os
 import random
 from datetime import datetime
 
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -28,7 +28,7 @@ class TelaCasamentos(QWidget):
         layout_principal.setSpacing(0)
 
         # ==========================================
-        # PAINEL ESQUERDO (A Mágica da Transição)
+        # PAINEL ESQUERDO
         # ==========================================
         self.painel_esq_base = QWidget()
         self.painel_esq_base.setStyleSheet("background-color: #0B0E14;")
@@ -36,13 +36,6 @@ class TelaCasamentos(QWidget):
         layout_esq_base.setContentsMargins(0, 0, 0, 0)
 
         self.stack_esq = QStackedWidget()
-        self.efeito_fade_esq = QGraphicsOpacityEffect(self.stack_esq)
-        self.stack_esq.setGraphicsEffect(self.efeito_fade_esq)
-        self.animacao_esq = QPropertyAnimation(self.efeito_fade_esq, b"opacity")
-        self.animacao_esq.setDuration(250)
-        self.animacao_esq.setStartValue(0.0)
-        self.animacao_esq.setEndValue(1.0)
-        self.animacao_esq.setEasingCurve(QEasingCurve.Type.InOutQuad)
 
         self.pagina_lista = QWidget()
         self.pagina_form = QWidget()
@@ -60,13 +53,6 @@ class TelaCasamentos(QWidget):
         # ==========================================
         self.painel_dir = QFrame()
         self.painel_dir.setStyleSheet("background-color: #11151F; border-left: 1px solid #1E2532;")
-
-        self.efeito_opacidade_dir = QGraphicsOpacityEffect(self.painel_dir)
-        self.painel_dir.setGraphicsEffect(self.efeito_opacidade_dir)
-        self.animacao_dir = QPropertyAnimation(self.efeito_opacidade_dir, b"opacity")
-        self.animacao_dir.setDuration(250)
-        self.animacao_dir.setStartValue(0.0)
-        self.animacao_dir.setEndValue(1.0)
 
         layout_dir_base = QVBoxLayout(self.painel_dir)
         layout_dir_base.setContentsMargins(0, 0, 0, 0)
@@ -296,11 +282,11 @@ class TelaCasamentos(QWidget):
 
     def transicionar_para_form(self):
         self.stack_esq.setCurrentIndex(1)
-        self.animacao_esq.start()
+        
 
     def transicionar_para_lista(self):
         self.stack_esq.setCurrentIndex(0)
-        self.animacao_esq.start()
+        
 
     # ==========================================
     # CÉREBRO E BANCO DE DADOS
@@ -323,22 +309,34 @@ class TelaCasamentos(QWidget):
         faltando = sum(1 for chk in self.checks_docs_iniciais if not chk.isChecked())
         entregues = {chk.text(): chk.isChecked() for chk in self.checks_docs_iniciais}
 
-        id_aleatorio = random.randint(1000, 9999)
-        protocolo_gerado = f"CAS-{datetime.now().year}-{id_aleatorio:04d}"
-
         db = SessionLocal()
         try:
-            criar_casamento(
-                db, protocolo=protocolo_gerado,
-                nome_noivo=self.inp_noivo.text().strip(),
-                nome_noiva=self.inp_noiva.text().strip(),
-                telefone=tel_final,
-                data_entrada=datetime.now().strftime("%d/%m/%Y"),
-                data_celebracao=data_final,
-                horario=hora_final,
-                docs=json.dumps(entregues),
-                pendencias=faltando
-            )
+            from sqlalchemy import func
+            from database.modelos import Casamento
+            max_id = db.query(func.max(Casamento.id)).scalar() or 0
+            proximo_seq = max_id + 1
+
+            import uuid
+            for tentativa in range(5):
+                sufixo_unico = uuid.uuid4().hex[:4].upper()
+                protocolo_gerado = f"CAS-{datetime.now().year}-{(proximo_seq + tentativa):04d}-{sufixo_unico}"
+                try:
+                    criar_casamento(
+                        db, protocolo=protocolo_gerado,
+                        nome_noivo=self.inp_noivo.text().strip(),
+                        nome_noiva=self.inp_noiva.text().strip(),
+                        telefone=tel_final,
+                        data_entrada=datetime.now().strftime("%d/%m/%Y"),
+                        data_celebracao=data_final,
+                        horario=hora_final,
+                        docs=json.dumps(entregues),
+                        pendencias=faltando
+                    )
+                    break
+                except Exception as e:
+                    db.rollback()
+                    if tentativa == 4:
+                        raise e
         finally:
             db.close()
 
@@ -358,22 +356,7 @@ class TelaCasamentos(QWidget):
         self.sincronizar_erp()  # <-- Gatilho acionado ao criar!
 
     def carregar_dados_do_banco(self):
-        db = SessionLocal()
-        try:
-            self.todos_casamentos = listar_todos_casamentos(db)
-        finally:
-            db.close()
-
-        total = len(self.todos_casamentos)
-        ativos = sum(1 for c in self.todos_casamentos if c.status not in ["Concluído (OK)", "Arquivado"])
-        com_pendencia = sum(1 for c in self.todos_casamentos if c.pendencias > 0 and c.status != "Arquivado")
-        concluidos = sum(1 for c in self.todos_casamentos if c.status == "Concluído (OK)")
-
-        self.lbl_kpi_total.setText(str(total))
-        self.lbl_kpi_ativos.setText(str(ativos))
-        self.lbl_kpi_pendencias.setText(str(com_pendencia))
-        self.lbl_kpi_concluidos.setText(str(concluidos))
-
+        self.atualizar_kpis_topo()
         self.filtrar_lista()
 
     def filtrar_lista(self):
@@ -381,17 +364,30 @@ class TelaCasamentos(QWidget):
         filtro_aba = self.combo_filtro.currentText()
         self.tabela.setRowCount(0)
 
-        dados_filtrados = []
-        for c in self.todos_casamentos:
-            is_ativo = c.status != "Arquivado"
-            if filtro_aba == "Exibir: Ativos" and not is_ativo: continue
-            if filtro_aba == "Exibir: Arquivados" and c.status != "Arquivado": continue
-
-            noivos_texto = f"{c.nome_noivo} e {c.nome_noiva}"
-            if termo in noivos_texto.lower() or termo in c.protocolo.lower():
-                dados_filtrados.append(c)
-
-        self.tabela.setRowCount(len(dados_filtrados))
+        db = SessionLocal()
+        try:
+            from database.modelos import Casamento
+            query = db.query(Casamento)
+            
+            if termo:
+                from sqlalchemy import or_
+                query = query.filter(or_(
+                    Casamento.nome_noivo.ilike(f"%{termo}%"),
+                    Casamento.nome_noiva.ilike(f"%{termo}%"),
+                    Casamento.protocolo.ilike(f"%{termo}%")
+                ))
+            else:
+                if filtro_aba == "Exibir: Ativos":
+                    query = query.filter(Casamento.status != "Arquivado")
+                elif filtro_aba == "Exibir: Arquivados":
+                    query = query.filter(Casamento.status == "Arquivado")
+                    
+            # Paginação pesada no Banco: Apenas 100 resultados no máximo para nunca travar
+            dados_filtrados = query.order_by(Casamento.id.desc()).limit(100).all()
+            
+            self.tabela.setRowCount(len(dados_filtrados))
+        finally:
+            db.close()
         for linha, c in enumerate(dados_filtrados):
             noivos_texto = f"{c.nome_noivo} e {c.nome_noiva}"
 
@@ -438,11 +434,16 @@ class TelaCasamentos(QWidget):
         linha = self.tabela.currentRow()
         protocolo = self.tabela.item(linha, 0).text()
 
-        casamento = next((c for c in self.todos_casamentos if c.protocolo == protocolo), None)
-        if casamento:
-            self.painel_dir.show()
-            self.construir_painel_direito(casamento)
-            self.animacao_dir.start()
+        db = SessionLocal()
+        try:
+            from database.modelos import Casamento
+            casamento = db.query(Casamento).filter(Casamento.protocolo == protocolo).first()
+            if casamento:
+                self.painel_dir.show()
+                self.construir_painel_direito(casamento)
+                
+        finally:
+            db.close()
 
     def construir_painel_direito(self, c):
         self.casamento_atual = c
@@ -457,55 +458,29 @@ class TelaCasamentos(QWidget):
         layout_header.addStretch()
         self.layout_dir.addLayout(layout_header)
 
-        layout_abas = QHBoxLayout()
-        abas = ["Geral", "Pagamentos", "Histórico"]
-        self.botoes_abas = []
-        for i, aba in enumerate(abas):
-            btn = QPushButton(aba)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda checked, idx=i: self.trocar_aba(idx))
-            self.botoes_abas.append(btn)
-            layout_abas.addWidget(btn)
-        layout_abas.addStretch()
-        self.layout_dir.addLayout(layout_abas)
-
-        self.stack_abas = QStackedWidget()
-
-        page_geral = QWidget()
-        layout_geral = QVBoxLayout(page_geral)
-        layout_geral.setContentsMargins(0, 10, 0, 0)
-        self.montar_aba_geral(layout_geral, c)
-        self.stack_abas.addWidget(page_geral)
-
-        page_pag = QWidget()
-        layout_pag = QVBoxLayout(page_pag)
-        layout_pag.setContentsMargins(0, 10, 0, 0)
-        self.montar_aba_pagamentos(layout_pag, c)
-        self.stack_abas.addWidget(page_pag)
-
-        page_hist = QWidget()
-        layout_hist = QVBoxLayout(page_hist)
-        layout_hist.setContentsMargins(0, 10, 0, 0)
-        self.montar_aba_historico(layout_hist, c)
-        self.stack_abas.addWidget(page_hist)
-
-        self.layout_dir.addWidget(self.stack_abas)
-        self.trocar_aba(0)
-
-    def trocar_aba(self, index):
-        self.stack_abas.setCurrentIndex(index)
-        for i, btn in enumerate(self.botoes_abas):
-            if i == index:
-                btn.setStyleSheet(
-                    "background: transparent; color: white; border-bottom: 2px solid #2962FF; padding-bottom: 5px; font-weight: bold; border-top: none; border-left: none; border-right: none; outline: none;")
-            else:
-                btn.setStyleSheet(
-                    "background: transparent; color: #8A92A6; border-bottom: 2px solid transparent; padding-bottom: 5px; border-top: none; border-left: none; border-right: none; outline: none;")
+        # Monta todas as seções uma abaixo da outra, pois é um QScrollArea
+        self.montar_secao_geral(self.layout_dir, c)
+        
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        sep1.setStyleSheet("color: #1E2532; margin: 15px 0;")
+        self.layout_dir.addWidget(sep1)
+        
+        self.montar_secao_pagamentos(self.layout_dir, c)
+        
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet("color: #1E2532; margin: 15px 0;")
+        self.layout_dir.addWidget(sep2)
+        
+        self.montar_secao_historico(self.layout_dir, c)
+        
+        self.layout_dir.addStretch()
 
     # ==========================================
-    # CONTEÚDO DAS ABAS
+    # CONTEÚDO DAS SEÇÕES (FLAT)
     # ==========================================
-    def montar_aba_geral(self, layout, c):
+    def montar_secao_geral(self, layout, c):
         lbl_info_tit = QLabel("Informações Gerais")
         lbl_info_tit.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
         layout.addWidget(lbl_info_tit)
@@ -530,9 +505,17 @@ class TelaCasamentos(QWidget):
         layout_docs.addWidget(lbl_doc_tit)
 
         try:
-            dict_docs = json.loads(c.docs_entregues)
+            dict_docs = json.loads(c.docs_entregues) if c.docs_entregues else {}
         except:
             dict_docs = {}
+            
+        if not dict_docs:
+            dict_docs = {
+                "RG do Noivo": False, "CPF do Noivo": False, "RG da Noiva": False, "CPF da Noiva": False,
+                "Comprovante de residência": False, "Certidão Noivo (Até 90 dias)": False,
+                "Certidão Noiva (Até 90 dias)": False, "Documentos das Testemunhas": False,
+                "Noivos assinaram os papéis": False, "Testemunhas assinaram os papéis": False
+            }
 
         self.checks_interativos = []
         estilo_check = "QCheckBox { color: #E2E8F0; font-size: 13px; margin: 4px 0; border: none; } QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border: 2px solid #2C364C; } QCheckBox::indicator:checked { background-color: #2962FF; border: none; }"
@@ -550,24 +533,8 @@ class TelaCasamentos(QWidget):
 
         layout.addWidget(card_docs)
 
-        if c.status == "Concluído (OK)":
-            btn_arq = QPushButton("🗄️ Arquivar / Finalizar Processo")
-            btn_arq.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_arq.setStyleSheet(
-                "background-color: #8E44AD; color: white; font-weight: bold; padding: 12px; border-radius: 6px; margin-top: 15px;")
-            btn_arq.clicked.connect(self.arquivar_processo)
-            layout.addWidget(btn_arq)
-        elif c.status == "Arquivado":
-            btn_rea = QPushButton("🔄 Reativar Processo (Desarquivar)")
-            btn_rea.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_rea.setStyleSheet(
-                "background-color: #e74c3c; color: white; font-weight: bold; padding: 12px; border-radius: 6px; margin-top: 15px;")
-            btn_rea.clicked.connect(self.reativar_processo)
-            layout.addWidget(btn_rea)
 
-        layout.addStretch()
-
-    def montar_aba_pagamentos(self, layout, c):
+    def montar_secao_pagamentos(self, layout, c):
         lbl_pag = QLabel("Taxa do Processo e Pagamentos")
         lbl_pag.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
         layout.addWidget(lbl_pag)
@@ -614,9 +581,7 @@ class TelaCasamentos(QWidget):
         btn_recibo.clicked.connect(lambda: notificar(self, "Recibo gerado e enviado para impressão.", "info"))
         layout.addWidget(btn_recibo)
 
-        layout.addStretch()
-
-    def montar_aba_historico(self, layout, c):
+    def montar_secao_historico(self, layout, c):
         lbl = QLabel("Linha do Tempo do Processo")
         lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px;")
         layout.addWidget(lbl)
@@ -642,6 +607,22 @@ class TelaCasamentos(QWidget):
                 "color: #E2E8F0; font-size: 13px; padding: 10px; background-color: #151A27; border-left: 3px solid #2962FF; margin-bottom: 8px; border-radius: 4px;")
             lbl_item.setWordWrap(True)
             layout.addWidget(lbl_item)
+
+        # Botões de Ação Principal movidos para o final da página
+        if c.status == "Concluído (OK)":
+            btn_arq = QPushButton("🗄️ Arquivar / Finalizar Processo")
+            btn_arq.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_arq.setStyleSheet(
+                "background-color: #8E44AD; color: white; font-weight: bold; padding: 12px; border-radius: 6px; margin-top: 30px;")
+            btn_arq.clicked.connect(self.arquivar_processo)
+            layout.addWidget(btn_arq)
+        elif c.status == "Arquivado":
+            btn_rea = QPushButton("🔄 Reativar Processo (Desarquivar)")
+            btn_rea.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_rea.setStyleSheet(
+                "background-color: #e74c3c; color: white; font-weight: bold; padding: 12px; border-radius: 6px; margin-top: 30px;")
+            btn_rea.clicked.connect(self.reativar_processo)
+            layout.addWidget(btn_rea)
 
         layout.addStretch()
 
@@ -678,16 +659,48 @@ class TelaCasamentos(QWidget):
         self.badge_status_direita.setText(novo_status)
         self.badge_status_direita.setStyleSheet(obter_estilo_status(novo_status))
 
+        # Atualiza a memória local (evitando requisições no DB para redraw)
+        self.casamento_atual.status = novo_status
+        self.casamento_atual.pendencias = faltando
+        self.casamento_atual.taxa_status = taxa
+        self.casamento_atual.docs_entregues = json.dumps(entregues)
+
+        # Atualiza apenas a linha selecionada na tabela visualmente (Zero lag, zero pulos)
         linha_selecionada = self.tabela.currentRow()
-        self.tabela.blockSignals(True)
-        self.carregar_dados_do_banco()
-        if linha_selecionada >= 0: self.tabela.selectRow(linha_selecionada)
-        self.tabela.blockSignals(False)
+        if linha_selecionada >= 0:
+            self.tabela.setCellWidget(linha_selecionada, 4, wrap_transparente(LabelStatus(novo_status)))
+            
+            if faltando > 0:
+                badge_pend = LabelStatus(str(faltando))
+                badge_pend.setStyleSheet(
+                    "background-color: rgba(231, 76, 60, 0.2); color: #e74c3c; border-radius: 12px; font-weight: bold; font-size: 11px;")
+            else:
+                badge_pend = LabelStatus("✓")
+                badge_pend.setStyleSheet(
+                    "background-color: rgba(46, 204, 113, 0.2); color: #2ecc71; border-radius: 12px; font-weight: bold; font-size: 11px;")
+            
+            self.tabela.setCellWidget(linha_selecionada, 5, wrap_transparente(badge_pend))
 
-        if self.stack_abas.currentIndex() == 2:
-            self.trocar_aba(2)
-
-        self.sincronizar_erp()  # <-- Gatilho acionado ao editar!
+        # Atualiza os contadores KPI no topo (Consulta super rápida O(1))
+        # Para evitar travar a UI, usamos um singleShot para atualizar apenas os KPIs assincronamente
+        QTimer.singleShot(0, self.atualizar_kpis_topo)
+        
+    def atualizar_kpis_topo(self):
+        db = SessionLocal()
+        try:
+            from database.modelos import Casamento
+            from sqlalchemy import func
+            total = db.query(func.count(Casamento.id)).scalar()
+            ativos = db.query(func.count(Casamento.id)).filter(~Casamento.status.in_(["Concluído (OK)", "Arquivado"])).scalar()
+            com_pendencia = db.query(func.count(Casamento.id)).filter(Casamento.pendencias > 0, Casamento.status != "Arquivado").scalar()
+            concluidos = db.query(func.count(Casamento.id)).filter(Casamento.status == "Concluído (OK)").scalar()
+            
+            self.lbl_kpi_total.setText(str(total))
+            self.lbl_kpi_ativos.setText(str(ativos))
+            self.lbl_kpi_pendencias.setText(str(com_pendencia))
+            self.lbl_kpi_concluidos.setText(str(concluidos))
+        finally:
+            db.close()
 
     # ==========================================
     # IMPRESSÃO DO REQUERIMENTO
